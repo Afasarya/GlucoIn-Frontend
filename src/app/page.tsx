@@ -1,65 +1,61 @@
 import Image from "next/image";
+import Navbar from "./components/common/Navbar";
+import Footer from "./components/common/Footer";
+import Hero from "./components/home/Hero";
+import WhyChoose from "./components/home/WhyChoose";
+import Workflow from "./components/home/Workflow";
+import Faq from "./components/home/Faq";
+import Cta from "./components/home/Cta";
 
 export default function Home() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
+    <div className="relative min-h-screen overflow-hidden bg-white">
+      {/* Background Ellipse - Left Side (Hero) */}
+      <div 
+        className="pointer-events-none absolute -left-16 -top-16 h-[500px] w-[500px] sm:-left-24 sm:-top-24 sm:h-[600px] sm:w-[600px] md:h-[700px] md:w-[700px] lg:-left-32 lg:-top-32 lg:h-[900px] lg:w-[900px] xl:-left-40 xl:-top-40 xl:h-[1000px] xl:w-[1000px]"
+        aria-hidden="true"
+      >
         <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
+          src="/images/assets/elipse-home.png"
+          alt=""
+          fill
+          className="object-cover object-right-bottom"
           priority
         />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
+      </div>
+
+      {/* Main Content */}
+      <div className="relative z-10">
+        <Navbar />
+        <main>
+          <Hero />
+          <WhyChoose />
+          
+          {/* Workflow & FAQ Section with Ellipse Background */}
+          <div className="relative">
+            {/* Background Ellipse - Left Side (between Workflow and FAQ) */}
+            <div 
+              className="pointer-events-none absolute -left-16 top-1/4 h-[500px] w-[500px] sm:-left-24 sm:h-[600px] sm:w-[600px] md:h-[700px] md:w-[700px] lg:-left-32 lg:h-[900px] lg:w-[900px] xl:-left-40 xl:h-[1000px] xl:w-[1000px]"
+              aria-hidden="true"
             >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+              <Image
+                src="/images/assets/elipse-faq.png"
+                alt=""
+                fill
+                className="object-cover object-right-bottom"
+              />
+            </div>
+            
+            <div className="relative z-10">
+              <Workflow />
+              <Faq />
+            </div>
+          </div>
+          
+          <Cta />
+        </main>
+        <Footer />
+      </div>
     </div>
   );
 }
