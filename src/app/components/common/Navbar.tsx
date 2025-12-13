@@ -7,9 +7,10 @@ import { Menu, X, ChevronDown, User, LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
 const navLinks = [
-  { href: "/dashboard", label: "Dashboard" },
+  { href: "/", label: "Beranda" },
   { href: "/asisten-ai", label: "Asisten AI" },
   { href: "/deteksi-dini", label: "Deteksi Dini" },
+  { href: "/cari-faskes", label: "Cari Faskes" },
   { href: "/booking-dokter", label: "Booking Dokter" },
   { href: "/belanja", label: "Belanja" },
 ];
