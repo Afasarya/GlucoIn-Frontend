@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState, useRef, useEffect } from "react";
+import { usePathname } from "next/navigation";
 import { Menu, X, ChevronDown, User, LogOut } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 
@@ -17,6 +18,7 @@ export default function Navbar() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const [isProfileDropdownOpen, setIsProfileDropdownOpen] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -57,21 +59,26 @@ export default function Navbar() {
 
           {/* Desktop Navigation */}
           <div className="hidden items-center gap-8 lg:flex">
-            {navLinks.map((link, index) => (
-              <motion.div
-                key={link.href}
-                initial={{ y: -10, opacity: 0 }}
-                animate={{ y: 0, opacity: 1 }}
-                transition={{ duration: 0.3, delay: index * 0.1 }}
-              >
-                <Link
-                  href={link.href}
-                  className="text-sm font-medium text-gray-600 transition-colors hover:text-[#1D7CF3]"
+            {navLinks.map((link, index) => {
+              const isActive = pathname === link.href;
+              return (
+                <motion.div
+                  key={link.href}
+                  initial={{ y: -10, opacity: 0 }}
+                  animate={{ y: 0, opacity: 1 }}
+                  transition={{ duration: 0.3, delay: index * 0.1 }}
                 >
-                  {link.label}
-                </Link>
-              </motion.div>
-            ))}
+                  <Link
+                    href={link.href}
+                    className={`text-sm font-medium transition-colors hover:text-[#1D7CF3] ${
+                      isActive ? "text-[#1D7CF3]" : "text-gray-600"
+                    }`}
+                  >
+                    {link.label}
+                  </Link>
+                </motion.div>
+              );
+            })}
           </div>
 
           {/* User Profile - Desktop with Dropdown */}
@@ -154,22 +161,27 @@ export default function Navbar() {
               className="absolute left-4 right-4 top-full mt-2 overflow-hidden rounded-xl bg-white shadow-lg lg:hidden"
             >
               <div className="flex flex-col gap-2 p-4">
-                {navLinks.map((link, index) => (
-                  <motion.div
-                    key={link.href}
-                    initial={{ x: -20, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    transition={{ duration: 0.2, delay: index * 0.05 }}
-                  >
-                    <Link
-                      href={link.href}
-                      className="block rounded-lg px-4 py-3 text-sm font-medium text-gray-600 transition-colors hover:bg-[#EEF8FF] hover:text-[#1D7CF3]"
-                      onClick={() => setIsMobileMenuOpen(false)}
+                {navLinks.map((link, index) => {
+                  const isActive = pathname === link.href;
+                  return (
+                    <motion.div
+                      key={link.href}
+                      initial={{ x: -20, opacity: 0 }}
+                      animate={{ x: 0, opacity: 1 }}
+                      transition={{ duration: 0.2, delay: index * 0.05 }}
                     >
-                      {link.label}
-                    </Link>
-                  </motion.div>
-                ))}
+                      <Link
+                        href={link.href}
+                        className={`block rounded-lg px-4 py-3 text-sm font-medium transition-colors hover:bg-[#EEF8FF] hover:text-[#1D7CF3] ${
+                          isActive ? "bg-[#EEF8FF] text-[#1D7CF3]" : "text-gray-600"
+                        }`}
+                        onClick={() => setIsMobileMenuOpen(false)}
+                      >
+                        {link.label}
+                      </Link>
+                    </motion.div>
+                  );
+                })}
                 
                 {/* User Profile - Mobile */}
                 <motion.div
