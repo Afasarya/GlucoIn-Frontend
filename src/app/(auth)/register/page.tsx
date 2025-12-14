@@ -5,6 +5,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { Eye, EyeOff } from "lucide-react";
 import { motion, Variants } from "framer-motion";
+import { useAuth } from "@/lib/hooks/useAuth";
 
 const containerVariants: Variants = {
   hidden: { opacity: 0 },
@@ -46,11 +47,21 @@ export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  
+  const { register, isLoading, error, clearError } = useAuth();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Handle register logic here
-    console.log({ name, email, password });
+    try {
+      await register({
+        email,
+        password,
+        full_name: name,
+        role: 'USER',
+      });
+    } catch {
+      // Error is handled by the hook
+    }
   };
 
   return (
@@ -95,7 +106,10 @@ export default function RegisterPage() {
                 type="text"
                 id="name"
                 value={name}
-                onChange={(e) => setName(e.target.value)}
+                onChange={(e) => {
+                  setName(e.target.value);
+                  clearError();
+                }}
                 placeholder="Zahira Mumtaz"
                 className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 text-[15px] text-[#1E293B] placeholder:text-[#94A3B8] focus:border-[#1D7CF3] focus:outline-none focus:ring-2 focus:ring-[#1D7CF3]/20"
                 required
@@ -114,7 +128,10 @@ export default function RegisterPage() {
                 type="email"
                 id="email"
                 value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                onChange={(e) => {
+                  setEmail(e.target.value);
+                  clearError();
+                }}
                 placeholder="user@gmail.com"
                 className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 text-[15px] text-[#1E293B] placeholder:text-[#94A3B8] focus:border-[#1D7CF3] focus:outline-none focus:ring-2 focus:ring-[#1D7CF3]/20"
                 required
@@ -134,7 +151,10 @@ export default function RegisterPage() {
                   type={showPassword ? "text" : "password"}
                   id="password"
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    clearError();
+                  }}
                   placeholder="••••••••"
                   className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 pr-12 text-[15px] text-[#1E293B] placeholder:text-[#94A3B8] focus:border-[#1D7CF3] focus:outline-none focus:ring-2 focus:ring-[#1D7CF3]/20"
                   required
@@ -153,15 +173,53 @@ export default function RegisterPage() {
               </div>
             </motion.div>
 
+            {/* Error Message */}
+            {error && (
+              <motion.div
+                initial={{ opacity: 0, y: -10 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="rounded-lg bg-red-50 p-3 text-center text-sm text-red-600"
+              >
+                {error}
+              </motion.div>
+            )}
+
             {/* Submit Button */}
             <motion.button
               variants={itemVariants}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={{ scale: isLoading ? 1 : 1.02 }}
+              whileTap={{ scale: isLoading ? 1 : 0.98 }}
               type="submit"
-              className="w-full rounded-lg bg-[#1D7CF3] px-6 py-3.5 text-base font-semibold text-white shadow-lg shadow-[#1D7CF3]/30 transition-all hover:bg-[#1D7CF3]/90 hover:shadow-xl hover:shadow-[#1D7CF3]/40"
+              disabled={isLoading}
+              className={`w-full rounded-lg px-6 py-3.5 text-base font-semibold text-white shadow-lg transition-all
+                ${isLoading
+                  ? "cursor-not-allowed bg-gray-400 shadow-none"
+                  : "bg-[#1D7CF3] shadow-[#1D7CF3]/30 hover:bg-[#1D7CF3]/90 hover:shadow-xl hover:shadow-[#1D7CF3]/40"
+                }`}
             >
-              Daftar
+              {isLoading ? (
+                <span className="flex items-center justify-center gap-2">
+                  <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24">
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                      fill="none"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                    />
+                  </svg>
+                  Memproses...
+                </span>
+              ) : (
+                "Daftar"
+              )}
             </motion.button>
           </motion.form>
 
