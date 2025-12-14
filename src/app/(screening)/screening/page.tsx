@@ -2,9 +2,16 @@
 
 import { useState, useCallback } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
-import { ChevronLeft, ChevronRight, Check, ChevronDown, Upload, X, Info } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, ChevronDown, Upload, X, Info, AlertTriangle, CheckCircle, RefreshCw } from "lucide-react";
 import Navbar from "@/app/components/common/Navbar";
 import Footer from "@/app/components/common/Footer";
+import { 
+  fullScreening, 
+  mapAnswersToQuestionnaire, 
+  getRiskLevelColor, 
+  getRiskLevelLabel,
+  type FullScreeningResult 
+} from "@/lib/api/detection";
 
 // Types for questionnaire
 type QuestionType = "text" | "dropdown" | "radio";
@@ -208,6 +215,8 @@ export default function ScreeningPage() {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [showConfirmation, setShowConfirmation] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [screeningResult, setScreeningResult] = useState<FullScreeningResult | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Fun facts for loading screen
   const funFacts = [
@@ -284,13 +293,47 @@ export default function ScreeningPage() {
     setCurrentQuestionIndex(0);
   };
 
-  const handleSubmitAnalysis = () => {
+  const handleSubmitAnalysis = async () => {
     if (!lidahFile || !kukuFile) return;
     setIsProcessing(true);
-    // Simulate API call - replace with actual API call later
-    console.log("Submitting:", { answers, lidahFile, kukuFile });
-    // After processing, redirect to results page
-    // For now, we'll just show the loading screen
+    setError(null);
+    
+    try {
+      // Map form answers to API questionnaire format
+      const questionnaire = mapAnswersToQuestionnaire(answers);
+      
+      // Call the full screening API
+      const result = await fullScreening(
+        lidahFile.file,
+        kukuFile.file,
+        questionnaire
+      );
+      
+      setScreeningResult(result);
+    } catch (err) {
+      console.error('Screening error:', err);
+      setError(err instanceof Error ? err.message : 'Terjadi kesalahan saat memproses data');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRetry = () => {
+    setScreeningResult(null);
+    setError(null);
+    setLidahFile(null);
+    setKukuFile(null);
+  };
+
+  const handleStartOver = () => {
+    setScreeningResult(null);
+    setError(null);
+    setLidahFile(null);
+    setKukuFile(null);
+    setAnswers({});
+    setCurrentStep(0);
+    setCurrentQuestionIndex(0);
+    setShowConfirmation(false);
   };
 
   const handleLidahUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -769,6 +812,214 @@ export default function ScreeningPage() {
     </motion.div>
   );
 
+  // Render results screen
+  const renderResultsScreen = () => {
+    if (!screeningResult) return null;
+
+    const riskColor = getRiskLevelColor(screeningResult.risk_level);
+    const riskLabel = getRiskLevelLabel(screeningResult.risk_level);
+    const scorePercent = Math.round(screeningResult.final_score * 100);
+
+    return (
+      <motion.div
+        variants={containerVariants}
+        initial="hidden"
+        animate="visible"
+        className="mx-auto flex w-full max-w-3xl flex-col items-center"
+      >
+        {/* Header */}
+        <motion.div variants={itemVariants} className="mb-8 text-center">
+          <h2 className="mb-2 text-2xl font-bold text-[#1E293B] sm:text-3xl">
+            Hasil Analisis Selesai! ✨
+          </h2>
+          <p className="text-base text-[#64748B]">
+            Berikut adalah hasil deteksi dini diabetes berdasarkan data yang kamu berikan
+          </p>
+        </motion.div>
+
+        {/* Risk Score Card */}
+        <motion.div
+          variants={itemVariants}
+          className="mb-8 w-full rounded-2xl border border-[#E2E8F0] bg-white p-6 shadow-sm"
+        >
+          <div className="flex flex-col items-center sm:flex-row sm:items-start sm:gap-8">
+            {/* Score Circle */}
+            <div className="mb-6 flex flex-col items-center sm:mb-0">
+              <div 
+                className="relative flex h-32 w-32 items-center justify-center rounded-full border-8"
+                style={{ borderColor: riskColor }}
+              >
+                <span className="text-3xl font-bold" style={{ color: riskColor }}>
+                  {scorePercent}%
+                </span>
+              </div>
+              <span 
+                className="mt-3 rounded-full px-4 py-1.5 text-sm font-semibold text-white"
+                style={{ backgroundColor: riskColor }}
+              >
+                {riskLabel}
+              </span>
+            </div>
+
+            {/* Interpretation */}
+            <div className="flex-1 text-center sm:text-left">
+              <h3 className="mb-2 text-lg font-semibold text-[#1E293B]">
+                {screeningResult.prediction === 'DIABETES' ? '⚠️ Terindikasi Risiko Diabetes' : '✅ Risiko Diabetes Rendah'}
+              </h3>
+              <p className="text-base text-[#64748B]">
+                {screeningResult.interpretation}
+              </p>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Detail Scores */}
+        <motion.div
+          variants={itemVariants}
+          className="mb-8 grid w-full grid-cols-1 gap-4 sm:grid-cols-3"
+        >
+          {/* Tongue Score */}
+          <div className="rounded-xl border border-[#E2E8F0] bg-white p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-2xl">👅</span>
+              <span className="font-medium text-[#1E293B]">Analisis Lidah</span>
+            </div>
+            {screeningResult.tongue_valid ? (
+              <p className="text-sm text-[#64748B]">
+                Probabilitas: {Math.round((screeningResult.tongue_probability || 0) * 100)}%
+              </p>
+            ) : (
+              <p className="text-sm text-[#F59E0B]">
+                {screeningResult.tongue_message || 'Gambar tidak valid'}
+              </p>
+            )}
+          </div>
+
+          {/* Nail Score */}
+          <div className="rounded-xl border border-[#E2E8F0] bg-white p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-2xl">💅</span>
+              <span className="font-medium text-[#1E293B]">Analisis Kuku</span>
+            </div>
+            {screeningResult.nail_valid ? (
+              <p className="text-sm text-[#64748B]">
+                Probabilitas: {Math.round((screeningResult.nail_probability || 0) * 100)}%
+              </p>
+            ) : (
+              <p className="text-sm text-[#F59E0B]">
+                {screeningResult.nail_message || 'Gambar tidak valid'}
+              </p>
+            )}
+          </div>
+
+          {/* Questionnaire Score */}
+          <div className="rounded-xl border border-[#E2E8F0] bg-white p-4">
+            <div className="mb-2 flex items-center gap-2">
+              <span className="text-2xl">📋</span>
+              <span className="font-medium text-[#1E293B]">Skor Kuesioner</span>
+            </div>
+            <p className="text-sm text-[#64748B]">
+              {Math.round(screeningResult.questionnaire_score * 100)}%
+            </p>
+          </div>
+        </motion.div>
+
+        {/* Recommendations */}
+        <motion.div
+          variants={itemVariants}
+          className="mb-8 w-full rounded-2xl border border-[#E2E8F0] bg-white p-6"
+        >
+          <h3 className="mb-4 text-lg font-semibold text-[#1E293B]">
+            💡 Rekomendasi untuk Kamu
+          </h3>
+          <ul className="space-y-3">
+            {screeningResult.recommendations.map((rec, index) => (
+              <li key={index} className="flex items-start gap-3">
+                <CheckCircle className="mt-0.5 h-5 w-5 shrink-0 text-[#22C55E]" />
+                <span className="text-base text-[#64748B]">{rec}</span>
+              </li>
+            ))}
+          </ul>
+        </motion.div>
+
+        {/* Actions */}
+        <motion.div
+          variants={itemVariants}
+          className="flex flex-col items-center gap-4 sm:flex-row"
+        >
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={handleStartOver}
+            className="flex items-center gap-2 rounded-xl border border-[#E2E8F0] bg-white px-6 py-3 text-base font-semibold text-[#64748B] transition-colors hover:bg-[#F8FAFC]"
+          >
+            <RefreshCw className="h-5 w-5" />
+            Mulai Ulang
+          </motion.button>
+          <motion.button
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            onClick={() => window.location.href = '/booking-dokter'}
+            className="rounded-xl bg-[#1D7CF3] px-8 py-3 text-base font-semibold text-white shadow-lg shadow-[#1D7CF3]/30 transition-all hover:bg-[#1D7CF3]/90"
+          >
+            Konsultasi dengan Dokter
+          </motion.button>
+        </motion.div>
+      </motion.div>
+    );
+  };
+
+  // Render error screen
+  const renderErrorScreen = () => (
+    <motion.div
+      variants={containerVariants}
+      initial="hidden"
+      animate="visible"
+      className="flex flex-col items-center justify-center text-center"
+    >
+      <motion.div
+        variants={itemVariants}
+        className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[#FEE2E2]"
+      >
+        <AlertTriangle className="h-10 w-10 text-[#EF4444]" />
+      </motion.div>
+      <motion.h2
+        variants={itemVariants}
+        className="mb-4 text-2xl font-bold text-[#1E293B] sm:text-3xl"
+      >
+        Oops! Terjadi Kesalahan 😔
+      </motion.h2>
+      <motion.p
+        variants={itemVariants}
+        className="mb-8 max-w-md text-base text-[#64748B]"
+      >
+        {error || 'Terjadi kesalahan saat memproses data. Silakan coba lagi.'}
+      </motion.p>
+      <motion.div
+        variants={itemVariants}
+        className="flex flex-col items-center gap-4 sm:flex-row"
+      >
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={handleRetry}
+          className="flex items-center gap-2 rounded-xl bg-[#1D7CF3] px-8 py-3 text-base font-semibold text-white shadow-lg shadow-[#1D7CF3]/30 transition-all hover:bg-[#1D7CF3]/90"
+        >
+          <RefreshCw className="h-5 w-5" />
+          Coba Lagi
+        </motion.button>
+        <motion.button
+          whileHover={{ scale: 1.02 }}
+          whileTap={{ scale: 0.98 }}
+          onClick={handleStartOver}
+          className="rounded-xl border border-[#E2E8F0] bg-white px-6 py-3 text-base font-semibold text-[#64748B] transition-colors hover:bg-[#F8FAFC]"
+        >
+          Mulai Dari Awal
+        </motion.button>
+      </motion.div>
+    </motion.div>
+  );
+
   // Navigation buttons
   const renderNavigation = () => {
     if (isUploadStep || showConfirmation) return null;
@@ -829,13 +1080,21 @@ export default function ScreeningPage() {
         </div>
 
         <div className="container relative z-10 mx-auto max-w-5xl px-4 py-12 lg:py-16">
-          {/* Stepper - hide when processing */}
-          {!isProcessing && renderStepper()}
+          {/* Stepper - hide when processing, showing results, or error */}
+          {!isProcessing && !screeningResult && !error && renderStepper()}
 
           {/* Content */}
           <div className="flex min-h-[450px] flex-col items-center justify-center">
             <AnimatePresence mode="wait">
-              {isProcessing ? (
+              {error ? (
+                <div key="error">
+                  {renderErrorScreen()}
+                </div>
+              ) : screeningResult ? (
+                <div key="results" className="w-full">
+                  {renderResultsScreen()}
+                </div>
+              ) : isProcessing ? (
                 <div key="processing">
                   {renderProcessingScreen()}
                 </div>

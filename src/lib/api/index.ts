@@ -5,3 +5,4 @@ export * from './admin';
 export * from './facility';
 export * from './doctor';
 export * from './marketplace';
+export * from './detection';
