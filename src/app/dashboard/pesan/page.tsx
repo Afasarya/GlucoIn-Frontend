@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, Suspense } from "react";
 import { motion } from "framer-motion";
 import { Phone, Send, Search } from "lucide-react";
 import Image from "next/image";
@@ -131,6 +131,14 @@ const demoMessages: ChatMessage[] = [
 ];
 
 export default function PesanPage() {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-full"><p className="text-gray-500">Memuat...</p></div>}>
+      <PesanContent />
+    </Suspense>
+  );
+}
+
+function PesanContent() {
   const searchParams = useSearchParams();
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _bookingId = searchParams.get("booking");

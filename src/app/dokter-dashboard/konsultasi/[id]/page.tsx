@@ -570,12 +570,6 @@ export default function DetailPasienPage() {
     }
   };
 
-  const tabs = [
-    { id: "informasi" as TabType, label: "Informasi Pasien" },
-    { id: "riwayat" as TabType, label: "Riwayat Pemeriksaan" },
-    { id: "hasil" as TabType, label: "Hasil Pemeriksaan" },
-  ];
-
   if (isLoading) {
     return <LoadingSkeleton />;
   }

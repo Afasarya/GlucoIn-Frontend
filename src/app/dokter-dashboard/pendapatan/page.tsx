@@ -568,7 +568,7 @@ export default function PendapatanPage() {
         selectedPeriod={chartPeriod}
         onPeriodChange={handleChartPeriodChange}
         totalIncome={incomeData?.total_income || 0}
-        percentChange={incomeData?.percent_change || 0}
+        percentChange={0}
         isLoading={isChartLoading}
       />
 
