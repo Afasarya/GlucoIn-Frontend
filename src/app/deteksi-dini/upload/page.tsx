@@ -2,9 +2,17 @@
 
 import { useState, useCallback, useRef } from "react";
 import { motion, AnimatePresence, Variants } from "framer-motion";
-import { ChevronLeft, ChevronRight, Check, ChevronDown, Upload, X, Info, FileText } from "lucide-react";
+import { ChevronLeft, ChevronRight, Check, ChevronDown, Upload, X, Info, FileText, AlertTriangle, RefreshCw, CheckCircle } from "lucide-react";
 import Navbar from "@/app/components/common/Navbar";
 import Footer from "@/app/components/common/Footer";
+import { 
+  scanLabResult, 
+  getStatusColor, 
+  getStatusLabel, 
+  getStatusBadgeClass,
+  type LabResultData,
+  type LabValue 
+} from "@/lib/api/labResults";
 
 // Types for questionnaire
 type QuestionType = "text" | "dropdown" | "radio";
@@ -211,6 +219,8 @@ export default function UploadLabPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [labResult, setLabResult] = useState<LabResultData | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Fun facts for loading screen
   const funFacts = [
@@ -287,12 +297,60 @@ export default function UploadLabPage() {
     setCurrentQuestionIndex(0);
   };
 
-  const handleSubmitAnalysis = () => {
+  const handleSubmitAnalysis = async () => {
     if (!labFile) return;
+    
+    // Check if user is logged in
+    const token = typeof window !== 'undefined' ? localStorage.getItem('glucoin_token') : null;
+    if (!token) {
+      // Redirect to login with return URL
+      const returnUrl = encodeURIComponent('/deteksi-dini/upload');
+      window.location.href = `/login?redirect=${returnUrl}`;
+      return;
+    }
+    
     setIsProcessing(true);
-    // Simulate API call - replace with actual API call later
-    console.log("Submitting:", { answers, labFile });
-    // After processing, redirect to results page
+    setError(null);
+    
+    try {
+      // Call the lab results scan API
+      const response = await scanLabResult(labFile.file);
+      
+      if (response.status === 'ok' && response.data) {
+        setLabResult(response.data);
+      } else {
+        throw new Error(response.message || 'Gagal memproses hasil lab');
+      }
+    } catch (err) {
+      console.error('Lab scan error:', err);
+      const errorMessage = err instanceof Error ? err.message : 'Terjadi kesalahan saat memproses hasil lab';
+      
+      // Check if it's an auth error
+      if (errorMessage.includes('Authentication') || errorMessage.includes('Unauthorized') || errorMessage.includes('401')) {
+        const returnUrl = encodeURIComponent('/deteksi-dini/upload');
+        window.location.href = `/login?redirect=${returnUrl}`;
+        return;
+      }
+      
+      setError(errorMessage);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleRetry = () => {
+    setLabResult(null);
+    setError(null);
+  };
+
+  const handleStartOver = () => {
+    setLabResult(null);
+    setError(null);
+    setLabFile(null);
+    setAnswers({});
+    setCurrentStep(0);
+    setCurrentQuestionIndex(0);
+    setShowConfirmation(false);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -831,7 +889,307 @@ export default function UploadLabPage() {
     </motion.div>
   );
 
+  // Helper to render a lab value row
+  const renderLabValueRow = (label: string, value: LabValue | null) => {
+    if (!value) return null;
+    return (
+      <div className="flex items-center justify-between py-2 border-b border-[#F1F5F9] last:border-0">
+        <span className="text-sm text-[#64748B]">{label}</span>
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-[#1E293B]">
+            {value.value} {value.unit}
+          </span>
+          <span className={`text-xs px-2 py-0.5 rounded-full ${getStatusBadgeClass(value.status)}`}>
+            {getStatusLabel(value.status)}
+          </span>
+        </div>
+      </div>
+    );
+  };
+
+  // Render results screen
+  const renderResultsScreen = () => {
+    if (!labResult) return null;
+
+    return (
+      <div className="relative min-h-screen overflow-hidden bg-[#EEF8FF]">
+        {/* Background */}
+        <div className="absolute inset-0 z-0 overflow-hidden">
+          <div className="absolute -right-32 top-20 h-[400px] w-[400px] rounded-full bg-[#C5E4FF] opacity-60 blur-[100px]" />
+          <div className="absolute -bottom-48 -left-48 h-[600px] w-[600px] rounded-full bg-[#C5E4FF] opacity-50 blur-[120px]" />
+        </div>
+
+        <div className="relative z-10 flex min-h-screen flex-col">
+          <div className="bg-white">
+            <Navbar />
+          </div>
+
+          <div className="container mx-auto flex-1 px-4 py-8 sm:py-12">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="mx-auto max-w-3xl"
+            >
+              {/* Header */}
+              <div className="mb-8 text-center">
+                <div className="mb-4 inline-flex h-16 w-16 items-center justify-center rounded-full bg-green-100">
+                  <CheckCircle className="h-8 w-8 text-green-600" />
+                </div>
+                <h1 className="text-2xl font-bold text-[#1E293B] sm:text-3xl">
+                  Hasil Analisis Lab Selesai! ✨
+                </h1>
+                <p className="mt-2 text-base text-[#64748B]">
+                  Berikut adalah hasil ekstraksi dari foto hasil lab kamu
+                </p>
+                {labResult.lab_name && (
+                  <p className="mt-1 text-sm text-[#94A3B8]">
+                    Lab: {labResult.lab_name} {labResult.test_date && `• ${new Date(labResult.test_date).toLocaleDateString('id-ID')}`}
+                  </p>
+                )}
+              </div>
+
+              {/* Results Cards */}
+              <div className="grid gap-4 sm:grid-cols-2">
+                {/* Gula Darah */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.1 }}
+                  className="rounded-2xl border border-[#E2E8F0] bg-white p-5"
+                >
+                  <h3 className="mb-4 flex items-center gap-2 font-semibold text-[#1E293B]">
+                    <span className="text-lg">🩸</span> Gula Darah
+                  </h3>
+                  <div className="space-y-1">
+                    {renderLabValueRow('GDP (Puasa)', labResult.gula_darah.gdp)}
+                    {renderLabValueRow('GD2PP', labResult.gula_darah.gd2pp)}
+                    {renderLabValueRow('GDS (Sewaktu)', labResult.gula_darah.gds)}
+                    {renderLabValueRow('HbA1c', labResult.gula_darah.hba1c)}
+                    {!labResult.gula_darah.gdp && !labResult.gula_darah.gd2pp && 
+                     !labResult.gula_darah.gds && !labResult.gula_darah.hba1c && (
+                      <p className="text-sm text-[#94A3B8] italic">Data tidak tersedia</p>
+                    )}
+                  </div>
+                </motion.div>
+
+                {/* Profil Lipid */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.2 }}
+                  className="rounded-2xl border border-[#E2E8F0] bg-white p-5"
+                >
+                  <h3 className="mb-4 flex items-center gap-2 font-semibold text-[#1E293B]">
+                    <span className="text-lg">💊</span> Profil Lipid
+                  </h3>
+                  <div className="space-y-1">
+                    {renderLabValueRow('Kolesterol Total', labResult.profil_lipid.cholesterol_total)}
+                    {renderLabValueRow('LDL', labResult.profil_lipid.ldl)}
+                    {renderLabValueRow('HDL', labResult.profil_lipid.hdl)}
+                    {renderLabValueRow('Trigliserida', labResult.profil_lipid.triglycerides)}
+                    {!labResult.profil_lipid.cholesterol_total && !labResult.profil_lipid.ldl && 
+                     !labResult.profil_lipid.hdl && !labResult.profil_lipid.triglycerides && (
+                      <p className="text-sm text-[#94A3B8] italic">Data tidak tersedia</p>
+                    )}
+                  </div>
+                </motion.div>
+
+                {/* Fungsi Ginjal */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.3 }}
+                  className="rounded-2xl border border-[#E2E8F0] bg-white p-5"
+                >
+                  <h3 className="mb-4 flex items-center gap-2 font-semibold text-[#1E293B]">
+                    <span className="text-lg">🫘</span> Fungsi Ginjal
+                  </h3>
+                  <div className="space-y-1">
+                    {renderLabValueRow('Kreatinin', labResult.fungsi_ginjal.creatinine)}
+                    {renderLabValueRow('Ureum', labResult.fungsi_ginjal.urea)}
+                    {renderLabValueRow('Asam Urat', labResult.fungsi_ginjal.uric_acid)}
+                    {!labResult.fungsi_ginjal.creatinine && !labResult.fungsi_ginjal.urea && 
+                     !labResult.fungsi_ginjal.uric_acid && (
+                      <p className="text-sm text-[#94A3B8] italic">Data tidak tersedia</p>
+                    )}
+                  </div>
+                </motion.div>
+
+                {/* Fungsi Hati */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4 }}
+                  className="rounded-2xl border border-[#E2E8F0] bg-white p-5"
+                >
+                  <h3 className="mb-4 flex items-center gap-2 font-semibold text-[#1E293B]">
+                    <span className="text-lg">🫁</span> Fungsi Hati
+                  </h3>
+                  <div className="space-y-1">
+                    {renderLabValueRow('SGOT', labResult.fungsi_hati.sgot)}
+                    {renderLabValueRow('SGPT', labResult.fungsi_hati.sgpt)}
+                    {!labResult.fungsi_hati.sgot && !labResult.fungsi_hati.sgpt && (
+                      <p className="text-sm text-[#94A3B8] italic">Data tidak tersedia</p>
+                    )}
+                  </div>
+                </motion.div>
+
+                {/* Darah Lengkap */}
+                <motion.div
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.5 }}
+                  className="rounded-2xl border border-[#E2E8F0] bg-white p-5 sm:col-span-2"
+                >
+                  <h3 className="mb-4 flex items-center gap-2 font-semibold text-[#1E293B]">
+                    <span className="text-lg">🔬</span> Darah Lengkap
+                  </h3>
+                  <div className="grid gap-x-8 sm:grid-cols-2">
+                    <div className="space-y-1">
+                      {renderLabValueRow('Hemoglobin', labResult.darah_lengkap.hemoglobin)}
+                      {renderLabValueRow('Hematokrit', labResult.darah_lengkap.hematocrit)}
+                      {renderLabValueRow('Leukosit', labResult.darah_lengkap.leukocytes)}
+                    </div>
+                    <div className="space-y-1">
+                      {renderLabValueRow('Trombosit', labResult.darah_lengkap.platelets)}
+                      {renderLabValueRow('Eritrosit', labResult.darah_lengkap.erythrocytes)}
+                    </div>
+                  </div>
+                  {!labResult.darah_lengkap.hemoglobin && !labResult.darah_lengkap.hematocrit && 
+                   !labResult.darah_lengkap.leukocytes && !labResult.darah_lengkap.platelets &&
+                   !labResult.darah_lengkap.erythrocytes && (
+                    <p className="text-sm text-[#94A3B8] italic">Data tidak tersedia</p>
+                  )}
+                </motion.div>
+
+                {/* Tekanan Darah */}
+                {labResult.tekanan_darah && (
+                  <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: 0.6 }}
+                    className="rounded-2xl border border-[#E2E8F0] bg-white p-5 sm:col-span-2"
+                  >
+                    <h3 className="mb-4 flex items-center gap-2 font-semibold text-[#1E293B]">
+                      <span className="text-lg">❤️</span> Tekanan Darah
+                    </h3>
+                    <p className="text-2xl font-bold text-[#1E293B]">
+                      {labResult.tekanan_darah.display}
+                    </p>
+                  </motion.div>
+                )}
+              </div>
+
+              {/* Confidence Score */}
+              {labResult.confidence_score && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  transition={{ delay: 0.7 }}
+                  className="mt-4 text-center text-sm text-[#94A3B8]"
+                >
+                  Tingkat kepercayaan AI: {Math.round(labResult.confidence_score * 100)}%
+                </motion.div>
+              )}
+
+              {/* Actions */}
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.8 }}
+                className="mt-8 flex flex-col items-center gap-4 sm:flex-row sm:justify-center"
+              >
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={handleStartOver}
+                  className="flex items-center gap-2 rounded-xl border border-[#E2E8F0] bg-white px-6 py-3 text-base font-semibold text-[#64748B] transition-colors hover:bg-[#F8FAFC]"
+                >
+                  <RefreshCw className="h-5 w-5" />
+                  Scan Ulang
+                </motion.button>
+                <motion.button
+                  whileHover={{ scale: 1.02 }}
+                  whileTap={{ scale: 0.98 }}
+                  onClick={() => window.location.href = '/booking-dokter'}
+                  className="rounded-xl bg-[#1D7CF3] px-8 py-3 text-base font-semibold text-white shadow-lg shadow-[#1D7CF3]/30 transition-all hover:bg-[#1D7CF3]/90"
+                >
+                  Konsultasi dengan Dokter
+                </motion.button>
+              </motion.div>
+            </motion.div>
+          </div>
+
+          <Footer />
+        </div>
+      </div>
+    );
+  };
+
+  // Render error screen
+  const renderErrorScreen = () => (
+    <div className="relative min-h-screen overflow-hidden bg-[#EEF8FF]">
+      <div className="absolute inset-0 z-0 overflow-hidden">
+        <div className="absolute -right-32 top-20 h-[400px] w-[400px] rounded-full bg-[#C5E4FF] opacity-60 blur-[100px]" />
+        <div className="absolute -bottom-48 -left-48 h-[600px] w-[600px] rounded-full bg-[#C5E4FF] opacity-50 blur-[120px]" />
+      </div>
+
+      <div className="relative z-10 flex min-h-screen flex-col">
+        <div className="bg-white">
+          <Navbar />
+        </div>
+
+        <div className="container mx-auto flex flex-1 flex-col items-center justify-center px-4 py-8">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col items-center text-center"
+          >
+            <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-full bg-[#FEE2E2]">
+              <AlertTriangle className="h-10 w-10 text-[#EF4444]" />
+            </div>
+            <h2 className="mb-4 text-2xl font-bold text-[#1E293B] sm:text-3xl">
+              Oops! Terjadi Kesalahan 😔
+            </h2>
+            <p className="mb-8 max-w-md text-base text-[#64748B]">
+              {error || 'Terjadi kesalahan saat memproses hasil lab. Silakan coba lagi.'}
+            </p>
+            <div className="flex flex-col items-center gap-4 sm:flex-row">
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleRetry}
+                className="flex items-center gap-2 rounded-xl bg-[#1D7CF3] px-8 py-3 text-base font-semibold text-white shadow-lg shadow-[#1D7CF3]/30 transition-all hover:bg-[#1D7CF3]/90"
+              >
+                <RefreshCw className="h-5 w-5" />
+                Coba Lagi
+              </motion.button>
+              <motion.button
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                onClick={handleStartOver}
+                className="rounded-xl border border-[#E2E8F0] bg-white px-6 py-3 text-base font-semibold text-[#64748B] transition-colors hover:bg-[#F8FAFC]"
+              >
+                Mulai Dari Awal
+              </motion.button>
+            </div>
+          </motion.div>
+        </div>
+
+        <Footer />
+      </div>
+    </div>
+  );
+
   // Main render
+  if (error) {
+    return renderErrorScreen();
+  }
+
+  if (labResult) {
+    return renderResultsScreen();
+  }
+
   if (isProcessing) {
     return renderProcessingScreen();
   }
