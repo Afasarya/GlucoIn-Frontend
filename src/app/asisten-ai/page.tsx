@@ -1,22 +1,42 @@
 "use client";
 
 import Image from "next/image";
-import { useState, useRef, useEffect } from "react";
-import { ArrowUpRight, Search, Edit3, MoreHorizontal, Send, Menu, X } from "lucide-react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { ArrowUpRight, Search, Edit3, MoreHorizontal, Send, Menu, X, Clock, Bot, Sparkles, Globe, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import Navbar from "../components/common/Navbar";
+
+// API Configuration
+const AI_API_URL = "https://glucoinai.mentorit.my.id/chatbot/chat";
 
 // Types
 interface Message {
   id: string;
   role: "user" | "assistant";
   content: string;
+  metadata?: {
+    is_diabetes_related?: boolean;
+    websearch_used?: boolean;
+    sources?: string[];
+    response_time_ms?: number;
+    model?: string;
+  };
 }
 
 interface ChatHistory {
   id: string;
   title: string;
   preview: string;
+}
+
+interface AIResponse {
+  success: boolean;
+  response: string;
+  is_diabetes_related: boolean;
+  websearch_used: boolean;
+  sources: string[];
+  response_time_ms: number;
+  model: string;
 }
 
 // Animation variants
@@ -80,6 +100,113 @@ const messageVariants = {
   },
 };
 
+// Helper function to format AI response text
+function formatAIResponse(text: string): React.ReactNode[] {
+  const elements: React.ReactNode[] = [];
+  
+  // Split by double newlines for paragraphs
+  const paragraphs = text.split(/\n\n+/);
+  
+  paragraphs.forEach((paragraph, pIndex) => {
+    if (!paragraph.trim()) return;
+    
+    // Check if it's a numbered list item (e.g., "1. Item" or "**1. Item**")
+    const numberedListMatch = paragraph.match(/^\*?\*?(\d+)\.\s*\*?\*?(.*)/);
+    
+    if (numberedListMatch) {
+      // Handle numbered list
+      const lines = paragraph.split('\n');
+      const listItems: React.ReactNode[] = [];
+      
+      lines.forEach((line, lIndex) => {
+        const lineMatch = line.match(/^\*?\*?(\d+)\.\s*\*?\*?(.*)/);
+        if (lineMatch) {
+          listItems.push(
+            <li key={`${pIndex}-${lIndex}`} className="mb-2">
+              {formatInlineText(lineMatch[2])}
+            </li>
+          );
+        } else if (line.trim()) {
+          listItems.push(
+            <li key={`${pIndex}-${lIndex}`} className="mb-2">
+              {formatInlineText(line)}
+            </li>
+          );
+        }
+      });
+      
+      elements.push(
+        <ol key={pIndex} className="list-decimal list-inside space-y-1 my-3">
+          {listItems}
+        </ol>
+      );
+    } else if (paragraph.startsWith('- ') || paragraph.startsWith('• ')) {
+      // Handle bullet list
+      const lines = paragraph.split('\n');
+      const listItems = lines
+        .filter(line => line.trim())
+        .map((line, lIndex) => (
+          <li key={`${pIndex}-${lIndex}`} className="mb-2">
+            {formatInlineText(line.replace(/^[-•]\s*/, ''))}
+          </li>
+        ));
+      
+      elements.push(
+        <ul key={pIndex} className="list-disc list-inside space-y-1 my-3">
+          {listItems}
+        </ul>
+      );
+    } else {
+      // Regular paragraph - handle line breaks within
+      const lines = paragraph.split('\n');
+      elements.push(
+        <p key={pIndex} className="mb-3 last:mb-0">
+          {lines.map((line, lIndex) => (
+            <span key={`${pIndex}-${lIndex}`}>
+              {formatInlineText(line)}
+              {lIndex < lines.length - 1 && <br />}
+            </span>
+          ))}
+        </p>
+      );
+    }
+  });
+  
+  return elements;
+}
+
+// Helper function to format inline text (bold, italic, emoji)
+function formatInlineText(text: string): React.ReactNode {
+  // Handle bold text with ** or __
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  
+  // Match **bold** or __bold__ patterns
+  const boldRegex = /\*\*([^*]+)\*\*|__([^_]+)__/g;
+  let match;
+  
+  while ((match = boldRegex.exec(text)) !== null) {
+    // Add text before the match
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    // Add the bold text
+    parts.push(
+      <strong key={match.index} className="font-semibold">
+        {match[1] || match[2]}
+      </strong>
+    );
+    lastIndex = match.index + match[0].length;
+  }
+  
+  // Add remaining text
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+  
+  return parts.length > 0 ? parts : text;
+}
+
 // Dummy chat history
 const dummyChatHistory: ChatHistory[] = [
   { id: "1", title: "Kenapa kakiku sering kesemutan", preview: "Kenapa kakiku sering kesemutan" },
@@ -89,7 +216,11 @@ const dummyChatHistory: ChatHistory[] = [
 ];
 
 // Landing Page Component
-function LandingView({ onSendMessage }: { onSendMessage: (message: string) => void }) {
+function LandingView({ onSendMessage, useWebSearch, onToggleWebSearch }: { 
+  onSendMessage: (message: string) => void;
+  useWebSearch: boolean;
+  onToggleWebSearch: () => void;
+}) {
   const [message, setMessage] = useState("");
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -165,6 +296,32 @@ function LandingView({ onSendMessage }: { onSendMessage: (message: string) => vo
                 >
                   <ArrowUpRight className="h-5 w-5" />
                 </motion.button>
+                
+                {/* Web Search Toggle */}
+                <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-3">
+                  <button
+                    type="button"
+                    onClick={onToggleWebSearch}
+                    className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                      useWebSearch 
+                        ? 'bg-[#EEF8FF] text-[#1D7CF3]' 
+                        : 'text-gray-500 hover:bg-gray-100'
+                    }`}
+                  >
+                    <Globe className="h-4 w-4" />
+                    <span>Web Search</span>
+                    <div className={`h-4 w-7 rounded-full transition-colors ${
+                      useWebSearch ? 'bg-[#1D7CF3]' : 'bg-gray-300'
+                    }`}>
+                      <div className={`h-3 w-3 rounded-full bg-white transition-transform mt-0.5 ${
+                        useWebSearch ? 'translate-x-3.5 ml-0' : 'translate-x-0.5'
+                      }`} />
+                    </div>
+                  </button>
+                  <span className="text-xs text-gray-400">
+                    {useWebSearch ? 'Mencari dari internet' : 'Mode offline'}
+                  </span>
+                </div>
               </div>
             </motion.form>
 
@@ -376,12 +533,16 @@ function ChatView({
   messages, 
   onSendMessage,
   isLoading,
-  onOpenSidebar
+  onOpenSidebar,
+  useWebSearch,
+  onToggleWebSearch
 }: { 
   messages: Message[];
   onSendMessage: (message: string) => void;
   isLoading: boolean;
   onOpenSidebar: () => void;
+  useWebSearch: boolean;
+  onToggleWebSearch: () => void;
 }) {
   const [inputMessage, setInputMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -461,15 +622,66 @@ function ChatView({
                     message.role === "user" ? "text-white" : "text-gray-700"
                   }`}>
                     {message.role === "assistant" ? (
-                      <div className="space-y-4">
-                        {message.content.split("\n\n").map((paragraph, idx) => (
-                          <p key={idx}>{paragraph}</p>
-                        ))}
+                      <div className="prose prose-sm max-w-none">
+                        {formatAIResponse(message.content)}
                       </div>
                     ) : (
                       message.content
                     )}
                   </div>
+                  
+                  {/* Metadata for AI responses */}
+                  {message.role === "assistant" && message.metadata && (
+                    <div className="mt-3 pt-3 border-t border-gray-100">
+                      <div className="flex flex-wrap items-center gap-3 text-xs text-gray-400">
+                        {message.metadata.model && (
+                          <div className="flex items-center gap-1">
+                            <Bot className="h-3 w-3" />
+                            <span>{message.metadata.model}</span>
+                          </div>
+                        )}
+                        {message.metadata.response_time_ms && (
+                          <div className="flex items-center gap-1">
+                            <Clock className="h-3 w-3" />
+                            <span>{(message.metadata.response_time_ms / 1000).toFixed(2)}s</span>
+                          </div>
+                        )}
+                        {message.metadata.is_diabetes_related && (
+                          <div className="flex items-center gap-1 text-green-500">
+                            <Sparkles className="h-3 w-3" />
+                            <span>Diabetes Related</span>
+                          </div>
+                        )}
+                        {message.metadata.websearch_used && (
+                          <div className="flex items-center gap-1 text-blue-500">
+                            <Globe className="h-3 w-3" />
+                            <span>Web Search</span>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Sources from web search */}
+                      {message.metadata.websearch_used && message.metadata.sources && message.metadata.sources.length > 0 && (
+                        <div className="mt-2 pt-2 border-t border-gray-100">
+                          <p className="text-xs text-gray-500 mb-1">Sumber:</p>
+                          <div className="flex flex-wrap gap-2">
+                            {message.metadata.sources.map((source, idx) => (
+                              <a
+                                key={idx}
+                                href={source}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="flex items-center gap-1 text-xs text-[#1D7CF3] hover:underline"
+                              >
+                                <ExternalLink className="h-3 w-3" />
+                                <span className="max-w-[200px] truncate">{new URL(source).hostname}</span>
+                              </a>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             ))}
@@ -520,24 +732,52 @@ function ChatView({
       {/* Input Area */}
       <div className="relative z-10 border-t border-gray-100/50 bg-white/80 px-6 py-4 backdrop-blur-sm">
         <form onSubmit={handleSubmit} className="mx-auto max-w-3xl">
-          <div className="relative flex items-center rounded-xl border border-gray-200 bg-white px-4 py-3 shadow-sm">
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              placeholder="Tanya Sesuatu"
-              className="flex-1 border-0 bg-transparent text-sm text-gray-700 placeholder-gray-400 outline-none"
-              disabled={isLoading}
-            />
-            <motion.button
-              type="submit"
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              disabled={!inputMessage.trim() || isLoading}
-              className="ml-3 flex h-8 w-8 items-center justify-center rounded-lg text-[#1D7CF3] transition-colors hover:bg-[#EEF8FF] disabled:opacity-50"
-            >
-              <Send className="h-5 w-5" />
-            </motion.button>
+          <div className="rounded-xl border border-gray-200 bg-white shadow-sm">
+            <div className="relative flex items-center px-4 py-3">
+              <input
+                type="text"
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                placeholder="Tanya Sesuatu"
+                className="flex-1 border-0 bg-transparent text-sm text-gray-700 placeholder-gray-400 outline-none"
+                disabled={isLoading}
+              />
+              <motion.button
+                type="submit"
+                whileHover={{ scale: 1.05 }}
+                whileTap={{ scale: 0.95 }}
+                disabled={!inputMessage.trim() || isLoading}
+                className="ml-3 flex h-8 w-8 items-center justify-center rounded-lg text-[#1D7CF3] transition-colors hover:bg-[#EEF8FF] disabled:opacity-50"
+              >
+                <Send className="h-5 w-5" />
+              </motion.button>
+            </div>
+            
+            {/* Web Search Toggle */}
+            <div className="flex items-center justify-between border-t border-gray-100 px-4 py-2">
+              <button
+                type="button"
+                onClick={onToggleWebSearch}
+                className={`flex items-center gap-2 rounded-lg px-3 py-1.5 text-sm transition-colors ${
+                  useWebSearch 
+                    ? 'bg-[#EEF8FF] text-[#1D7CF3]' 
+                    : 'text-gray-500 hover:bg-gray-100'
+                }`}
+              >
+                <Globe className="h-4 w-4" />
+                <span>Web Search</span>
+                <div className={`h-4 w-7 rounded-full transition-colors ${
+                  useWebSearch ? 'bg-[#1D7CF3]' : 'bg-gray-300'
+                }`}>
+                  <div className={`h-3 w-3 rounded-full bg-white transition-transform mt-0.5 ${
+                    useWebSearch ? 'translate-x-3.5 ml-0' : 'translate-x-0.5'
+                  }`} />
+                </div>
+              </button>
+              <span className="text-xs text-gray-400">
+                {useWebSearch ? 'Mencari dari internet' : 'Mode offline'}
+              </span>
+            </div>
           </div>
         </form>
       </div>
@@ -553,6 +793,8 @@ export default function AsistenAIPage() {
   const [currentChatId, setCurrentChatId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [useWebSearch, setUseWebSearch] = useState(false);
+  const [sessionId] = useState(() => `session_${Date.now()}_${Math.random().toString(36).substring(7)}`);
 
   // Handle window resize to auto-show sidebar on desktop
   useEffect(() => {
@@ -569,43 +811,72 @@ export default function AsistenAIPage() {
     return () => window.removeEventListener('resize', handleResize);
   }, []);
 
-  // Simulate AI response
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const simulateAIResponse = (userMessage: string) => {
+  // Toggle web search
+  const toggleWebSearch = useCallback(() => {
+    setUseWebSearch(prev => !prev);
+  }, []);
+
+  // Call AI API
+  const callAIAPI = useCallback(async (userMessage: string): Promise<AIResponse | null> => {
+    try {
+      const response = await fetch(AI_API_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: userMessage,
+          use_websearch: useWebSearch,
+          session_id: sessionId,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const data: AIResponse = await response.json();
+      return data;
+    } catch (error) {
+      console.error('AI API Error:', error);
+      return null;
+    }
+  }, [sessionId, useWebSearch]);
+
+  // Handle AI response
+  const handleAIResponse = useCallback(async (userMessage: string) => {
     setIsLoading(true);
     
-    // Simulate API call delay
-    setTimeout(() => {
-      const aiResponse: Message = {
+    const apiResponse = await callAIAPI(userMessage);
+    
+    if (apiResponse && apiResponse.success) {
+      const aiMessage: Message = {
         id: Date.now().toString(),
         role: "assistant",
-        content: `Tenang ya 😊
-
-Risiko sedang artinya tubuhmu memberi sinyal awal, tapi ini belum berarti kamu diabetes.
-
-Saat ini, yang paling penting adalah langkah pencegahan sederhana supaya risikonya tidak meningkat. Kamu bisa mulai dari hal-hal kecil berikut:
-
-1. Perhatikan pola makan
-Kurangi minuman manis dan makanan tinggi gula, pelan-pelan saja—tidak perlu langsung ekstrem.
-
-2. Tambah aktivitas ringan
-Jalan kaki 20-30 menit sehari sudah sangat membantu menstabilkan gula darah.
-
-3. Ikuti task harian dari Glucoin
-Task ini dibuat khusus berdasarkan kondisimu sekarang, jadi aman dan realistis untuk dijalani.
-
-4. Pantau secara rutin
-Cek ulang risiko secara berkala supaya kita bisa lihat perkembangannya bersama.
-
-Kalau kamu merasa khawatir atau ingin penjelasan lebih lanjut, konsultasi dengan dokter juga bisa jadi langkah yang baik, aku bisa bantu carikan dokter yang sesuai.
-
-Aku di sini untuk menemani prosesmu 💙`
+        content: apiResponse.response,
+        metadata: {
+          is_diabetes_related: apiResponse.is_diabetes_related,
+          websearch_used: apiResponse.websearch_used,
+          sources: apiResponse.sources,
+          response_time_ms: apiResponse.response_time_ms,
+          model: apiResponse.model,
+        },
       };
       
-      setMessages(prev => [...prev, aiResponse]);
-      setIsLoading(false);
-    }, 1500);
-  };
+      setMessages(prev => [...prev, aiMessage]);
+    } else {
+      // Error fallback message
+      const errorMessage: Message = {
+        id: Date.now().toString(),
+        role: "assistant",
+        content: "Maaf, terjadi kesalahan saat menghubungi AI. Silakan coba lagi dalam beberapa saat. 🙏",
+      };
+      
+      setMessages(prev => [...prev, errorMessage]);
+    }
+    
+    setIsLoading(false);
+  }, [callAIAPI]);
 
   const handleSendMessage = (message: string) => {
     // Add user message
@@ -629,8 +900,8 @@ Aku di sini untuk menemani prosesmu 💙`
       ]);
     }
     
-    // Simulate AI response
-    simulateAIResponse(message);
+    // Call AI API
+    handleAIResponse(message);
   };
 
   const handleNewChat = () => {
@@ -646,7 +917,13 @@ Aku di sini untuk menemani prosesmu 💙`
 
   // Render landing page or chat view
   if (!isInChat) {
-    return <LandingView onSendMessage={handleSendMessage} />;
+    return (
+      <LandingView 
+        onSendMessage={handleSendMessage} 
+        useWebSearch={useWebSearch}
+        onToggleWebSearch={toggleWebSearch}
+      />
+    );
   }
 
   return (
@@ -672,6 +949,8 @@ Aku di sini untuk menemani prosesmu 💙`
         onSendMessage={handleSendMessage}
         isLoading={isLoading}
         onOpenSidebar={() => setIsSidebarOpen(true)}
+        useWebSearch={useWebSearch}
+        onToggleWebSearch={toggleWebSearch}
       />
     </motion.div>
   );
