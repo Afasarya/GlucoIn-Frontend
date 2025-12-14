@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import Link from "next/link";
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ArrowUpRight, Search, Edit3, MoreHorizontal, Send, Menu, X, Clock, Bot, Sparkles, Globe, ExternalLink } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
@@ -397,7 +398,16 @@ function ChatSidebar({
       <aside className="hidden h-full w-[280px] flex-shrink-0 flex-col border-r border-gray-100 bg-white lg:flex">
         {/* Logo */}
         <div className="flex h-16 items-center px-6">
-          <span className="text-xl font-bold text-gray-800">LOGO</span>
+          <Link href="/">
+            <Image
+              src="/images/assets/logo.svg"
+              alt="Glucoin Logo"
+              width={100}
+              height={32}
+              className="h-8 w-auto"
+              priority
+            />
+          </Link>
         </div>
 
         {/* Search */}
@@ -460,7 +470,15 @@ function ChatSidebar({
           >
             {/* Header with Close Button */}
             <div className="flex h-16 items-center justify-between px-6">
-              <span className="text-xl font-bold text-gray-800">LOGO</span>
+              <Link href="/">
+                <Image
+                  src="/images/assets/logo.svg"
+                  alt="Glucoin Logo"
+                  width={100}
+                  height={32}
+                  className="h-8 w-auto"
+                />
+              </Link>
               <button
                 onClick={onClose}
                 className="flex h-8 w-8 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100"

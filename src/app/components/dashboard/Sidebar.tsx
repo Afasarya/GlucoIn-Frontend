@@ -35,8 +35,15 @@ export default function DashboardSidebar() {
     >
       {/* Logo */}
       <div className="flex h-20 items-center px-6">
-        <Link href="/" className="text-xl font-bold text-gray-800">
-          LOGO
+        <Link href="/">
+          <Image
+            src="/images/assets/logo.svg"
+            alt="Glucoin Logo"
+            width={100}
+            height={32}
+            className="h-8 w-auto"
+            priority
+          />
         </Link>
       </div>
 

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState, useRef, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { Menu, X, ChevronDown, User, LogOut } from "lucide-react";
@@ -74,12 +75,16 @@ export default function Navbar() {
         <div className="flex items-center justify-between">
           {/* Logo */}
           <Link href="/" className="flex items-center">
-            <motion.span 
-              whileHover={{ scale: 1.05 }}
-              className="text-xl font-bold text-gray-800 lg:text-2xl"
-            >
-              LOGO
-            </motion.span>
+            <motion.div whileHover={{ scale: 1.05 }}>
+              <Image
+                src="/images/assets/logo.svg"
+                alt="Glucoin Logo"
+                width={120}
+                height={40}
+                className="h-8 w-auto lg:h-10"
+                priority
+              />
+            </motion.div>
           </Link>
 
           {/* Desktop Navigation */}

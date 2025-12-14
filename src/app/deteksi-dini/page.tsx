@@ -51,7 +51,7 @@ const detectionOptions = [
     description:
       "Yuk kenali kondisi tubuhmu lewat screening awal lewat foto kuku/lidah & pertanyaan singkat",
     icon: "/images/assets/daun.svg",
-    href: "/deteksi-dini/screening",
+    href: "/screening",
   },
   {
     id: "has-history",
