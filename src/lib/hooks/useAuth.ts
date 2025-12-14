@@ -16,6 +16,38 @@ import type {
 const TOKEN_KEY = 'glucoin_token';
 const USER_KEY = 'glucoin_user';
 
+// Helper function to translate error messages to Indonesian
+function translateError(message: string): string {
+  const translations: Record<string, string> = {
+    'Invalid credentials': 'Email atau password salah',
+    'Invalid OTP code': 'Kode OTP tidak valid',
+    'OTP code has expired': 'Kode OTP sudah kadaluarsa',
+    'User not found': 'Pengguna tidak ditemukan',
+    'Email already exists': 'Email sudah terdaftar',
+    'Email already verified': 'Email sudah terverifikasi',
+    'Please verify your email before logging in': 'Silakan verifikasi email Anda terlebih dahulu',
+    'Invalid or expired reset token': 'Token reset tidak valid atau sudah kadaluarsa',
+    'Passwords do not match': 'Password tidak cocok',
+    'Password must be at least 6 characters': 'Password minimal 6 karakter',
+    'Network error': 'Terjadi kesalahan jaringan',
+    'Internal server error': 'Terjadi kesalahan server',
+  };
+  
+  // Check for exact match
+  if (translations[message]) {
+    return translations[message];
+  }
+  
+  // Check for partial match
+  for (const [key, value] of Object.entries(translations)) {
+    if (message.toLowerCase().includes(key.toLowerCase())) {
+      return value;
+    }
+  }
+  
+  return message;
+}
+
 // Helper functions for localStorage
 export const storage = {
   getToken: (): string | null => {
@@ -65,7 +97,7 @@ export function useAuth() {
       return response;
     } catch (err) {
       const apiError = err as ApiError;
-      setError(apiError.message || 'Registrasi gagal');
+      setError(translateError(apiError.message || 'Registrasi gagal'));
       throw err;
     } finally {
       setIsLoading(false);
@@ -78,48 +110,53 @@ export function useAuth() {
     setError(null);
     try {
       const response = await authApi.login(data);
-      if (response.data?.access_token && response.data?.user) {
-        storage.setToken(response.data.access_token);
-        storage.setUser(response.data.user);
+      // Backend returns { user, access_token } directly or { data: { user, access_token } }
+      const accessToken = response.data?.access_token || (response as unknown as { access_token: string }).access_token;
+      const user = response.data?.user || (response as unknown as { user: User }).user;
+      
+      if (accessToken && user) {
+        storage.setToken(accessToken);
+        storage.setUser(user);
         router.push('/dashboard');
+      } else {
+        throw { message: 'Login gagal, silakan coba lagi' };
       }
       return response;
     } catch (err) {
       const apiError = err as ApiError;
+      const errorMessage = apiError.message || 'Login gagal';
+      
       // Check if user needs verification
-      if (apiError.message?.toLowerCase().includes('verifikasi') || 
-          apiError.message?.toLowerCase().includes('verify')) {
+      if (errorMessage.toLowerCase().includes('verify') || 
+          errorMessage.toLowerCase().includes('verifikasi')) {
         sessionStorage.setItem('pending_verification_email', data.email);
         router.push('/verify-otp');
       }
-      setError(apiError.message || 'Login gagal');
+      setError(translateError(errorMessage));
       throw err;
     } finally {
       setIsLoading(false);
     }
   }, [router]);
 
-  // Verify OTP
-  const verifyOtp = useCallback(async (data: VerifyOtpRequest) => {
+  // Verify OTP - returns success status for UI handling
+  const verifyOtp = useCallback(async (data: VerifyOtpRequest): Promise<{ success: boolean; message: string }> => {
     setIsLoading(true);
     setError(null);
     try {
-      const response = await authApi.verifyOtp(data);
-      if (response.data?.access_token && response.data?.user) {
-        storage.setToken(response.data.access_token);
-        storage.setUser(response.data.user);
-        sessionStorage.removeItem('pending_verification_email');
-        router.push('/dashboard');
-      }
-      return response;
+      await authApi.verifyOtp(data);
+      // Clear the pending email
+      sessionStorage.removeItem('pending_verification_email');
+      // Return success - let the component handle redirect
+      return { success: true, message: 'Email berhasil diverifikasi! Mengalihkan ke halaman login...' };
     } catch (err) {
       const apiError = err as ApiError;
-      setError(apiError.message || 'Verifikasi OTP gagal');
+      setError(translateError(apiError.message || 'Verifikasi OTP gagal'));
       throw err;
     } finally {
       setIsLoading(false);
     }
-  }, [router]);
+  }, []);
 
   // Resend OTP
   const resendOtp = useCallback(async (email: string) => {
@@ -130,7 +167,7 @@ export function useAuth() {
       return response;
     } catch (err) {
       const apiError = err as ApiError;
-      setError(apiError.message || 'Gagal mengirim ulang OTP');
+      setError(translateError(apiError.message || 'Gagal mengirim ulang OTP'));
       throw err;
     } finally {
       setIsLoading(false);
@@ -146,7 +183,7 @@ export function useAuth() {
       return response;
     } catch (err) {
       const apiError = err as ApiError;
-      setError(apiError.message || 'Gagal mengirim link reset password');
+      setError(translateError(apiError.message || 'Gagal mengirim link reset password'));
       throw err;
     } finally {
       setIsLoading(false);

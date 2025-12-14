@@ -3,8 +3,9 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { motion, Variants } from "framer-motion";
-import { ArrowLeft, RefreshCw } from "lucide-react";
+import { ArrowLeft, RefreshCw, CheckCircle } from "lucide-react";
 import { useAuth } from "@/lib/hooks/useAuth";
 
 const containerVariants: Variants = {
@@ -50,8 +51,10 @@ export default function VerifyOtpPage() {
   const [email, setEmail] = useState<string>("");
   const [countdown, setCountdown] = useState<number>(0);
   const [success, setSuccess] = useState<string>("");
+  const [isVerified, setIsVerified] = useState(false);
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const emailInitialized = useRef(false);
+  const router = useRouter();
   
   const { verifyOtp, resendOtp, isLoading, error, clearError } = useAuth();
 
@@ -133,7 +136,15 @@ export default function VerifyOtpPage() {
     }
 
     try {
-      await verifyOtp({ email, otp: otpString });
+      const result = await verifyOtp({ email, otp: otpString });
+      if (result.success) {
+        setIsVerified(true);
+        setSuccess(result.message);
+        // Redirect to login after 2 seconds
+        setTimeout(() => {
+          router.push('/login');
+        }, 2000);
+      }
     } catch {
       // Error is handled by the hook
     }
@@ -203,111 +214,134 @@ export default function VerifyOtpPage() {
             onSubmit={handleSubmit}
             className="mt-8 space-y-6"
           >
-            {/* OTP Input Fields */}
-            <motion.div variants={itemVariants}>
-              <div className="flex justify-center gap-3">
-                {otp.map((digit, index) => (
-                  <input
-                    key={index}
-                    ref={(el) => { inputRefs.current[index] = el; }}
-                    type="text"
-                    inputMode="numeric"
-                    maxLength={1}
-                    value={digit}
-                    onChange={(e) => handleChange(index, e.target.value)}
-                    onKeyDown={(e) => handleKeyDown(index, e)}
-                    onPaste={handlePaste}
-                    className={`h-14 w-12 rounded-lg border-2 text-center text-xl font-bold transition-all
-                      ${digit ? "border-[#1D7CF3] bg-[#1D7CF3]/5" : "border-[#E2E8F0] bg-white"}
-                      ${error ? "border-red-400 bg-red-50" : ""}
-                      focus:border-[#1D7CF3] focus:outline-none focus:ring-2 focus:ring-[#1D7CF3]/20
-                      text-[#1E293B] placeholder:text-[#94A3B8]`}
-                    disabled={isLoading}
-                  />
-                ))}
-              </div>
-            </motion.div>
-
-            {/* Error Message */}
-            {error && (
+            {/* Success State - Show when verified */}
+            {isVerified ? (
               <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-lg bg-red-50 p-3 text-center text-sm text-red-600"
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                className="flex flex-col items-center gap-4 py-8"
               >
-                {error}
+                <div className="flex h-20 w-20 items-center justify-center rounded-full bg-green-100">
+                  <CheckCircle className="h-10 w-10 text-green-600" />
+                </div>
+                <div className="text-center">
+                  <h3 className="text-lg font-semibold text-green-600">
+                    Email Berhasil Diverifikasi!
+                  </h3>
+                  <p className="mt-2 text-sm text-gray-600">
+                    Mengalihkan ke halaman login...
+                  </p>
+                </div>
               </motion.div>
+            ) : (
+              <>
+                {/* OTP Input Fields */}
+                <motion.div variants={itemVariants}>
+                  <div className="flex justify-center gap-3">
+                    {otp.map((digit, index) => (
+                      <input
+                        key={index}
+                        ref={(el) => { inputRefs.current[index] = el; }}
+                        type="text"
+                        inputMode="numeric"
+                        maxLength={1}
+                        value={digit}
+                        onChange={(e) => handleChange(index, e.target.value)}
+                        onKeyDown={(e) => handleKeyDown(index, e)}
+                        onPaste={handlePaste}
+                        className={`h-14 w-12 rounded-lg border-2 text-center text-xl font-bold transition-all
+                          ${digit ? "border-[#1D7CF3] bg-[#1D7CF3]/5" : "border-[#E2E8F0] bg-white"}
+                          ${error ? "border-red-400 bg-red-50" : ""}
+                          focus:border-[#1D7CF3] focus:outline-none focus:ring-2 focus:ring-[#1D7CF3]/20
+                          text-[#1E293B] placeholder:text-[#94A3B8]`}
+                        disabled={isLoading}
+                      />
+                    ))}
+                  </div>
+                </motion.div>
+
+                {/* Error Message */}
+                {error && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-lg bg-red-50 p-3 text-center text-sm text-red-600"
+                  >
+                    {error}
+                  </motion.div>
+                )}
+
+                {/* Success Message for resend */}
+                {success && !isVerified && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="rounded-lg bg-green-50 p-3 text-center text-sm text-green-600"
+                  >
+                    {success}
+                  </motion.div>
+                )}
+
+                {/* Submit Button */}
+                <motion.button
+                  variants={itemVariants}
+                  whileHover={{ scale: isOtpComplete && !isLoading ? 1.02 : 1 }}
+                  whileTap={{ scale: isOtpComplete && !isLoading ? 0.98 : 1 }}
+                  type="submit"
+                  disabled={!isOtpComplete || isLoading}
+                  className={`w-full rounded-lg px-6 py-3.5 text-base font-semibold text-white shadow-lg transition-all
+                    ${isOtpComplete && !isLoading
+                      ? "bg-[#1D7CF3] shadow-[#1D7CF3]/30 hover:bg-[#1D7CF3]/90 hover:shadow-xl hover:shadow-[#1D7CF3]/40"
+                      : "cursor-not-allowed bg-gray-300 shadow-none"
+                    }`}
+                >
+                  {isLoading ? (
+                    <span className="flex items-center justify-center gap-2">
+                      <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24">
+                        <circle
+                          className="opacity-25"
+                          cx="12"
+                          cy="12"
+                          r="10"
+                          stroke="currentColor"
+                          strokeWidth="4"
+                          fill="none"
+                        />
+                        <path
+                          className="opacity-75"
+                          fill="currentColor"
+                          d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
+                        />
+                      </svg>
+                      Memverifikasi...
+                    </span>
+                  ) : (
+                    "Verifikasi"
+                  )}
+                </motion.button>
+
+                {/* Resend OTP */}
+                <motion.div
+                  variants={itemVariants}
+                  className="text-center text-[15px] text-[#64748B]"
+                >
+                  Tidak menerima kode?{" "}
+                  <button
+                    type="button"
+                    onClick={handleResend}
+                    disabled={countdown > 0 || isLoading}
+                    className={`inline-flex items-center gap-1 font-semibold transition-colors
+                      ${countdown > 0 || isLoading
+                        ? "cursor-not-allowed text-gray-400"
+                        : "text-[#1D7CF3] hover:text-[#1D7CF3]/80"
+                      }`}
+                  >
+                    <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
+                    {countdown > 0 ? `Kirim ulang (${countdown}s)` : "Kirim ulang"}
+                  </button>
+                </motion.div>
+              </>
             )}
-
-            {/* Success Message */}
-            {success && (
-              <motion.div
-                initial={{ opacity: 0, y: -10 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-lg bg-green-50 p-3 text-center text-sm text-green-600"
-              >
-                {success}
-              </motion.div>
-            )}
-
-            {/* Submit Button */}
-            <motion.button
-              variants={itemVariants}
-              whileHover={{ scale: isOtpComplete && !isLoading ? 1.02 : 1 }}
-              whileTap={{ scale: isOtpComplete && !isLoading ? 0.98 : 1 }}
-              type="submit"
-              disabled={!isOtpComplete || isLoading}
-              className={`w-full rounded-lg px-6 py-3.5 text-base font-semibold text-white shadow-lg transition-all
-                ${isOtpComplete && !isLoading
-                  ? "bg-[#1D7CF3] shadow-[#1D7CF3]/30 hover:bg-[#1D7CF3]/90 hover:shadow-xl hover:shadow-[#1D7CF3]/40"
-                  : "cursor-not-allowed bg-gray-300 shadow-none"
-                }`}
-            >
-              {isLoading ? (
-                <span className="flex items-center justify-center gap-2">
-                  <svg className="h-5 w-5 animate-spin" viewBox="0 0 24 24">
-                    <circle
-                      className="opacity-25"
-                      cx="12"
-                      cy="12"
-                      r="10"
-                      stroke="currentColor"
-                      strokeWidth="4"
-                      fill="none"
-                    />
-                    <path
-                      className="opacity-75"
-                      fill="currentColor"
-                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"
-                    />
-                  </svg>
-                  Memverifikasi...
-                </span>
-              ) : (
-                "Verifikasi"
-              )}
-            </motion.button>
-
-            {/* Resend OTP */}
-            <motion.div
-              variants={itemVariants}
-              className="text-center text-[15px] text-[#64748B]"
-            >
-              Tidak menerima kode?{" "}
-              <button
-                type="button"
-                onClick={handleResend}
-                disabled={countdown > 0 || isLoading}
-                className={`inline-flex items-center gap-1 font-semibold transition-colors
-                  ${countdown > 0 || isLoading
-                    ? "cursor-not-allowed text-gray-400"
-                    : "text-[#1D7CF3] hover:text-[#1D7CF3]/80"
-                  }`}
-              >
-                <RefreshCw className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
-                {countdown > 0 ? `Kirim ulang (${countdown}s)` : "Kirim ulang"}
-              </button>
-            </motion.div>
           </motion.form>
         </motion.div>
       </div>

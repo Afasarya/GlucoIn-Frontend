@@ -44,14 +44,31 @@ const imageVariants: Variants = {
 
 export default function RegisterPage() {
   const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [validationError, setValidationError] = useState("");
   
   const { register, isLoading, error, clearError } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setValidationError("");
+    
+    // Validate password match
+    if (password !== confirmPassword) {
+      setValidationError("Password dan konfirmasi password tidak sama");
+      return;
+    }
+    
+    // Validate password length
+    if (password.length < 6) {
+      setValidationError("Password minimal 6 karakter");
+      return;
+    }
+    
     try {
       await register({
         email,
@@ -62,6 +79,11 @@ export default function RegisterPage() {
     } catch {
       // Error is handled by the hook
     }
+  };
+  
+  const handleClearErrors = () => {
+    clearError();
+    setValidationError("");
   };
 
   return (
@@ -108,7 +130,7 @@ export default function RegisterPage() {
                 value={name}
                 onChange={(e) => {
                   setName(e.target.value);
-                  clearError();
+                  handleClearErrors();
                 }}
                 placeholder="Zahira Mumtaz"
                 className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 text-[15px] text-[#1E293B] placeholder:text-[#94A3B8] focus:border-[#1D7CF3] focus:outline-none focus:ring-2 focus:ring-[#1D7CF3]/20"
@@ -130,7 +152,7 @@ export default function RegisterPage() {
                 value={email}
                 onChange={(e) => {
                   setEmail(e.target.value);
-                  clearError();
+                  handleClearErrors();
                 }}
                 placeholder="user@gmail.com"
                 className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 text-[15px] text-[#1E293B] placeholder:text-[#94A3B8] focus:border-[#1D7CF3] focus:outline-none focus:ring-2 focus:ring-[#1D7CF3]/20"
@@ -153,7 +175,7 @@ export default function RegisterPage() {
                   value={password}
                   onChange={(e) => {
                     setPassword(e.target.value);
-                    clearError();
+                    handleClearErrors();
                   }}
                   placeholder="••••••••"
                   className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 pr-12 text-[15px] text-[#1E293B] placeholder:text-[#94A3B8] focus:border-[#1D7CF3] focus:outline-none focus:ring-2 focus:ring-[#1D7CF3]/20"
@@ -173,14 +195,49 @@ export default function RegisterPage() {
               </div>
             </motion.div>
 
+            {/* Confirm Password Field */}
+            <motion.div variants={itemVariants}>
+              <label
+                htmlFor="confirmPassword"
+                className="mb-2 block text-sm font-medium text-[#1E293B]"
+              >
+                Konfirmasi Password
+              </label>
+              <div className="relative">
+                <input
+                  type={showConfirmPassword ? "text" : "password"}
+                  id="confirmPassword"
+                  value={confirmPassword}
+                  onChange={(e) => {
+                    setConfirmPassword(e.target.value);
+                    handleClearErrors();
+                  }}
+                  placeholder="••••••••"
+                  className="w-full rounded-lg border border-[#E2E8F0] bg-white px-4 py-3 pr-12 text-[15px] text-[#1E293B] placeholder:text-[#94A3B8] focus:border-[#1D7CF3] focus:outline-none focus:ring-2 focus:ring-[#1D7CF3]/20"
+                  required
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                  className="absolute right-4 top-1/2 -translate-y-1/2 text-[#94A3B8] transition-colors hover:text-[#64748B]"
+                >
+                  {showConfirmPassword ? (
+                    <Eye className="h-5 w-5" />
+                  ) : (
+                    <EyeOff className="h-5 w-5" />
+                  )}
+                </button>
+              </div>
+            </motion.div>
+
             {/* Error Message */}
-            {error && (
+            {(error || validationError) && (
               <motion.div
                 initial={{ opacity: 0, y: -10 }}
                 animate={{ opacity: 1, y: 0 }}
                 className="rounded-lg bg-red-50 p-3 text-center text-sm text-red-600"
               >
-                {error}
+                {validationError || error}
               </motion.div>
             )}
 
