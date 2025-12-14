@@ -8,8 +8,9 @@ import {
   Search,
   History,
   Target,
-  Activity,
+  Stethoscope,
   FileText,
+  MessageSquare,
   ChevronUp,
 } from "lucide-react";
 import { motion } from "framer-motion";
@@ -19,8 +20,9 @@ const sidebarLinks = [
   { href: "/dashboard/deteksi-dini", label: "Deteksi Dini", icon: Search },
   { href: "/dashboard/riwayat", label: "Riwayat", icon: History },
   { href: "/dashboard/misi-harian", label: "Misi Harian", icon: Target },
-  { href: "/dashboard/health-tracking", label: "Health Tracking", icon: Activity },
+  { href: "/dashboard/konsultasi", label: "Konsultasi", icon: Stethoscope },
   { href: "/dashboard/analisis-lab", label: "Analisis Lab", icon: FileText },
+  { href: "/dashboard/pesan", label: "Pesan", icon: MessageSquare },
 ];
 
 export default function DashboardSidebar() {
