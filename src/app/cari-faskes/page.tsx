@@ -4,9 +4,33 @@ import { useState, useEffect, useCallback, useMemo } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import Image from "next/image";
-import { Search, Clock, MapPin, Phone, X } from "lucide-react";
+import { Search, Clock, MapPin, Phone, X, Loader2, Navigation, RefreshCw } from "lucide-react";
 import Navbar from "@/app/components/common/Navbar";
 import type { ComponentType } from "react";
+import {
+  getNearbyFacilities,
+  calculateDuration,
+  getFacilityTypeLabel,
+  formatOperatingHours,
+} from "@/lib/api/facility";
+import type { HealthcareFacility } from "@/lib/types/facility";
+
+// Internal Faskes type for UI compatibility
+interface Faskes {
+  id: string;
+  name: string;
+  type: "HOSPITAL" | "PHARMACY" | "CLINIC" | "PUSKESMAS" | "LAB";
+  address: string;
+  latitude: number;
+  longitude: number;
+  operatingHours: string;
+  phone: string;
+  distance: number;
+  duration: number;
+  image: string;
+  city?: string;
+  province?: string;
+}
 
 // Map component props type
 interface MapComponentProps {
@@ -23,135 +47,56 @@ const MapComponent = dynamic<MapComponentProps>(
     ssr: false,
     loading: () => (
       <div className="flex h-full w-full items-center justify-center bg-gray-100">
-        <div className="text-gray-500">Memuat peta...</div>
+        <Loader2 className="h-8 w-8 animate-spin text-[#1D7CF3]" />
+        <span className="ml-2 text-gray-500">Memuat peta...</span>
       </div>
     ),
   }
 );
 
-// Types
-interface Faskes {
-  id: string;
-  name: string;
-  type: "rumah-sakit" | "klinik" | "lab";
-  address: string;
-  latitude: number;
-  longitude: number;
-  operatingHours: string;
-  phone: string;
-  distance: number; // in km
-  duration: number; // in minutes
-  image: string;
-}
-
-// Filter options
+// Filter options - updated to match backend types
 const filterOptions = [
   { value: "semua", label: "Semua" },
-  { value: "rumah-sakit", label: "Rumah Sakit" },
-  { value: "klinik", label: "Klinik" },
-  { value: "lab", label: "Lab" },
+  { value: "HOSPITAL", label: "Rumah Sakit" },
+  { value: "CLINIC", label: "Klinik" },
+  { value: "PUSKESMAS", label: "Puskesmas" },
+  { value: "PHARMACY", label: "Apotek" },
+  { value: "LAB", label: "Laboratorium" },
 ];
 
-// Default faskes data (will be replaced by API data)
-const defaultFaskesData: Faskes[] = [
-  {
-    id: "1",
-    name: "Rumah Sakit Umum Hermina Pandanaran",
-    type: "rumah-sakit",
-    address:
-      "RS Hermina Pandanaran, Jl. Pandanaran No.45 Lantai 6, Pekunden, Kec. Semarang Tengah, Kota Semarang, Jawa Tengah 50134",
-    latitude: -6.9932,
-    longitude: 110.4203,
-    operatingHours: "Buka 24 jam",
-    phone: "(024) 1729301",
-    distance: 1.2,
-    duration: 5,
-    image: "/images/assets/faskes-1.jpg",
-  },
-  {
-    id: "2",
-    name: "Rumah Sakit Umum Hermina Pandanaran",
-    type: "klinik",
-    address:
-      "RS Hermina Pandanaran, Jl. Pandanaran No.45 Lantai 6, Pekunden, Kec. Semarang Tengah, Kota Semarang, Jawa Tengah 50134",
-    latitude: -6.9875,
-    longitude: 110.4156,
-    operatingHours: "07.00 - 20.00",
-    phone: "(024) 1729301",
-    distance: 1.2,
-    duration: 5,
-    image: "/images/assets/faskes-1.jpg",
-  },
-  {
-    id: "3",
-    name: "Rumah Sakit Umum Hermina Pandanaran",
-    type: "lab",
-    address:
-      "RS Hermina Pandanaran, Jl. Pandanaran No.45 Lantai 6, Pekunden, Kec. Semarang Tengah, Kota Semarang, Jawa Tengah 50134",
-    latitude: -6.9898,
-    longitude: 110.4225,
-    operatingHours: "Buka 24 jam",
-    phone: "(024) 1729301",
-    distance: 1.2,
-    duration: 5,
-    image: "/images/assets/faskes-1.jpg",
-  },
-  {
-    id: "4",
-    name: "SMC Rumah Sakit Telogorejo Semarang",
-    type: "rumah-sakit",
-    address:
-      "Jl. KH. Ahmad Dahlan No.1, Pekunden, Kec. Semarang Tengah, Kota Semarang, Jawa Tengah 50134",
-    latitude: -6.9845,
-    longitude: 110.4312,
-    operatingHours: "Buka 24 jam",
-    phone: "(024) 8415555",
-    distance: 2.5,
-    duration: 10,
-    image: "/images/assets/faskes-1.jpg",
-  },
-  {
-    id: "5",
-    name: "Klinik Pandawa Medika",
-    type: "klinik",
-    address:
-      "Jl. Pandanaran No.82, Pekunden, Kec. Semarang Tengah, Kota Semarang, Jawa Tengah 50134",
-    latitude: -6.9912,
-    longitude: 110.4178,
-    operatingHours: "08.00 - 21.00",
-    phone: "(024) 8411234",
-    distance: 0.8,
-    duration: 3,
-    image: "/images/assets/faskes-1.jpg",
-  },
-  {
-    id: "6",
-    name: "Laboratorium Prodia Semarang",
-    type: "lab",
-    address:
-      "Jl. Sultan Agung No.123, Candisari, Kec. Candisari, Kota Semarang, Jawa Tengah 50252",
-    latitude: -7.0012,
-    longitude: 110.4256,
-    operatingHours: "07.00 - 17.00",
-    phone: "(024) 8312345",
-    distance: 3.1,
-    duration: 12,
-    image: "/images/assets/faskes-1.jpg",
-  },
-];
+// Convert backend facility to UI Faskes type
+function convertToFaskes(facility: HealthcareFacility): Faskes {
+  return {
+    id: facility.id,
+    name: facility.name,
+    type: facility.type,
+    address: facility.address,
+    latitude: facility.latitude,
+    longitude: facility.longitude,
+    operatingHours: formatOperatingHours(
+      facility.is_open_24h,
+      facility.opening_time,
+      facility.closing_time
+    ),
+    phone: facility.phone || "-",
+    distance: facility.distance_km ? Number(facility.distance_km.toFixed(2)) : 0,
+    duration: facility.distance_km ? calculateDuration(facility.distance_km) : 0,
+    image: facility.image_url || "/images/assets/faskes-1.jpg",
+    city: facility.city,
+    province: facility.province,
+  };
+}
 
-// Get type label
-function getTypeLabel(type: Faskes["type"]): string {
-  switch (type) {
-    case "rumah-sakit":
-      return "Rumah Sakit";
-    case "klinik":
-      return "Klinik";
-    case "lab":
-      return "Lab";
-    default:
-      return type;
-  }
+// Get type color
+function getTypeColor(type: Faskes["type"]): { bg: string; text: string } {
+  const colors: Record<string, { bg: string; text: string }> = {
+    HOSPITAL: { bg: "bg-red-100", text: "text-red-700" },
+    PHARMACY: { bg: "bg-green-100", text: "text-green-700" },
+    CLINIC: { bg: "bg-blue-100", text: "text-blue-700" },
+    PUSKESMAS: { bg: "bg-orange-100", text: "text-orange-700" },
+    LAB: { bg: "bg-purple-100", text: "text-purple-700" },
+  };
+  return colors[type] || { bg: "bg-gray-100", text: "text-gray-700" };
 }
 
 // Faskes Card Component
@@ -164,19 +109,21 @@ function FaskesCard({
   onViewDetail: (faskes: Faskes) => void;
   onRoute: (faskes: Faskes) => void;
 }) {
+  const typeColor = getTypeColor(faskes.type);
+  
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
-      className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm"
+      className="rounded-xl border border-gray-100 bg-white p-4 shadow-sm hover:shadow-md transition-shadow"
     >
       {/* Type Label */}
-      <span className="text-xs font-medium text-[#1D7CF3]">
-        {getTypeLabel(faskes.type)}
+      <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${typeColor.bg} ${typeColor.text}`}>
+        {getFacilityTypeLabel(faskes.type)}
       </span>
 
       {/* Name */}
-      <h3 className="mt-1 text-sm font-bold text-gray-800">{faskes.name}</h3>
+      <h3 className="mt-1.5 text-sm font-bold text-gray-800 line-clamp-2">{faskes.name}</h3>
 
       {/* Operating Hours */}
       <p className="mt-0.5 text-xs text-[#1D7CF3]">{faskes.operatingHours}</p>
@@ -216,10 +163,14 @@ function FaskesCard({
 function DetailModal({
   faskes,
   onClose,
+  onRoute,
 }: {
   faskes: Faskes;
   onClose: () => void;
+  onRoute: (faskes: Faskes) => void;
 }) {
+  const typeColor = getTypeColor(faskes.type);
+  
   return (
     <motion.div
       initial={{ opacity: 0 }}
@@ -243,7 +194,6 @@ function DetailModal({
             fill
             className="object-cover"
             onError={(e) => {
-              // Fallback for missing image
               const target = e.target as HTMLImageElement;
               target.src =
                 "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='400' height='200' viewBox='0 0 400 200'%3E%3Crect fill='%23E5E7EB' width='400' height='200'/%3E%3Ctext fill='%239CA3AF' font-family='Arial' font-size='16' x='50%25' y='50%25' text-anchor='middle' dy='.3em'%3ENo Image%3C/text%3E%3C/svg%3E";
@@ -256,6 +206,10 @@ function DetailModal({
           >
             <X className="h-5 w-5" />
           </button>
+          {/* Type Badge */}
+          <span className={`absolute left-3 top-3 rounded-full px-3 py-1 text-xs font-medium ${typeColor.bg} ${typeColor.text}`}>
+            {getFacilityTypeLabel(faskes.type)}
+          </span>
         </div>
 
         {/* Content */}
@@ -266,6 +220,11 @@ function DetailModal({
           {/* Address */}
           <p className="mt-2 text-sm leading-relaxed text-gray-600">
             {faskes.address}
+            {faskes.city && faskes.province && (
+              <span className="block mt-1 text-gray-500">
+                {faskes.city}, {faskes.province}
+              </span>
+            )}
           </p>
 
           {/* Info */}
@@ -278,82 +237,183 @@ function DetailModal({
               <Phone className="h-4 w-4 text-[#1D7CF3]" />
               <span>{faskes.phone}</span>
             </div>
+            <div className="flex items-center gap-2 text-sm text-gray-600">
+              <MapPin className="h-4 w-4 text-[#1D7CF3]" />
+              <span>{faskes.distance} km dari lokasi Anda ({faskes.duration} menit)</span>
+            </div>
           </div>
+
+          {/* Route Button */}
+          <button
+            onClick={() => onRoute(faskes)}
+            className="mt-4 w-full flex items-center justify-center gap-2 rounded-xl bg-[#1D7CF3] py-3 text-sm font-medium text-white transition-colors hover:bg-[#1565D8]"
+          >
+            <Navigation className="h-4 w-4" />
+            Buka di Google Maps
+          </button>
         </div>
       </motion.div>
     </motion.div>
   );
 }
 
+// Default location: Jakarta Pusat (area where most faskes data is located)
+const DEFAULT_LOCATION = { lat: -6.2088, lng: 106.8456 };
+
 export default function CariFaskesPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [activeFilter, setActiveFilter] = useState("semua");
-  const [faskesData, setFaskesData] = useState<Faskes[]>(defaultFaskesData);
+  const [faskesData, setFaskesData] = useState<Faskes[]>([]);
   const [selectedFaskes, setSelectedFaskes] = useState<Faskes | null>(null);
   const [showDetailModal, setShowDetailModal] = useState(false);
-  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number }>(
-    { lat: -6.9932, lng: 110.4203 } // Default to Semarang city center
-  );
+  // Start with default location (Jakarta Pusat) immediately
+  const [userLocation, setUserLocation] = useState<{ lat: number; lng: number }>(DEFAULT_LOCATION);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [radiusKm, setRadiusKm] = useState(15);
+  const [isGettingLocation, setIsGettingLocation] = useState(true);
 
-  // Get user location on mount
-  useEffect(() => {
-    if (typeof navigator !== "undefined" && navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition(
-        (position) => {
-          setUserLocation({
-            lat: position.coords.latitude,
-            lng: position.coords.longitude,
-          });
-        },
-        (error) => {
-          console.log("Geolocation error:", error);
-          // Keep default Semarang location
-        }
-      );
+  // Get user's current location
+  const getUserLocation = useCallback(() => {
+    setLocationError(null);
+    setIsGettingLocation(true);
+    
+    if (typeof navigator === "undefined" || !navigator.geolocation) {
+      setLocationError("Browser tidak mendukung geolokasi. Menggunakan lokasi default (Jakarta).");
+      setIsGettingLocation(false);
+      return;
     }
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setUserLocation({
+          lat: position.coords.latitude,
+          lng: position.coords.longitude,
+        });
+        setLocationError(null);
+        setIsGettingLocation(false);
+      },
+      (error) => {
+        console.log("Geolocation error:", error);
+        let errorMessage = "Menggunakan lokasi default (Jakarta)";
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = "Izin lokasi ditolak. Menggunakan lokasi default (Jakarta).";
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = "Lokasi tidak tersedia. Menggunakan lokasi default (Jakarta).";
+            break;
+          case error.TIMEOUT:
+            errorMessage = "Timeout mendapatkan lokasi. Menggunakan lokasi default (Jakarta).";
+            break;
+        }
+        
+        setLocationError(errorMessage);
+        setIsGettingLocation(false);
+        // Keep using the default location (Jakarta), don't change it
+      },
+      {
+        enableHighAccuracy: false, // Set to false for faster response
+        timeout: 15000, // Increase timeout to 15 seconds
+        maximumAge: 600000, // Cache location for 10 minutes
+      }
+    );
   }, []);
 
-  // Filter faskes based on search and filter using useMemo
+  // Fetch facilities from backend
+  const fetchFaskesData = useCallback(async () => {
+    if (!userLocation) return;
+    
+    setIsLoading(true);
+    
+    try {
+      const response = await getNearbyFacilities({
+        latitude: userLocation.lat,
+        longitude: userLocation.lng,
+        radius_km: radiusKm,
+        limit: 100,
+      });
+
+      console.log("API Response:", response); // Debug log
+
+      // Backend returns { facilities: [...] } format
+      let facilities: HealthcareFacility[] = [];
+      if (response && typeof response === 'object') {
+        // Check for 'facilities' field (backend format)
+        if ('facilities' in response && Array.isArray(response.facilities)) {
+          facilities = response.facilities;
+        }
+        // Fallback: check for 'data' field
+        else if ('data' in response && Array.isArray((response as { data: HealthcareFacility[] }).data)) {
+          facilities = (response as { data: HealthcareFacility[] }).data;
+        }
+        // Fallback: response itself is array
+        else if (Array.isArray(response)) {
+          facilities = response as unknown as HealthcareFacility[];
+        }
+      }
+      
+      console.log("Facilities found:", facilities.length); // Debug log
+      
+      const faskesArray = facilities.map(convertToFaskes);
+      
+      // Sort by distance
+      faskesArray.sort((a, b) => a.distance - b.distance);
+      
+      setFaskesData(faskesArray);
+    } catch (error) {
+      console.error("Error fetching facilities:", error);
+      setFaskesData([]);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [userLocation, radiusKm]);
+
+  // Fetch facilities immediately on mount with default location
+  useEffect(() => {
+    // Fetch with default/current location immediately
+    fetchFaskesData();
+    // Also try to get user's actual location
+    getUserLocation();
+  }, []); // Only run once on mount
+
+  // Refetch when location or radius changes
+  useEffect(() => {
+    if (userLocation) {
+      fetchFaskesData();
+    }
+  }, [userLocation, radiusKm, fetchFaskesData]);
+
+  // Refresh data
+  const handleRefresh = async () => {
+    setIsRefreshing(true);
+    getUserLocation();
+    await fetchFaskesData();
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
+
+  // Filter faskes based on search and filter
   const filteredFaskes = useMemo(() => {
     let result = faskesData;
 
-    // Filter by type
     if (activeFilter !== "semua") {
       result = result.filter((f) => f.type === activeFilter);
     }
 
-    // Filter by search query
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
       result = result.filter(
         (f) =>
           f.name.toLowerCase().includes(query) ||
-          f.address.toLowerCase().includes(query)
+          f.address.toLowerCase().includes(query) ||
+          (f.city && f.city.toLowerCase().includes(query))
       );
     }
 
     return result;
   }, [searchQuery, activeFilter, faskesData]);
-
-  // Fetch faskes data from backend (placeholder)
-  const fetchFaskesData = useCallback(async () => {
-    try {
-      // TODO: Replace with actual API call
-      // const response = await fetch('/api/faskes');
-      // const data = await response.json();
-      // setFaskesData(data);
-      
-      // Using default data for now
-      setFaskesData(defaultFaskesData);
-    } catch (error) {
-      console.error("Error fetching faskes data:", error);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchFaskesData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   // Handle view detail
   const handleViewDetail = (faskes: Faskes) => {
@@ -363,7 +423,7 @@ export default function CariFaskesPage() {
 
   // Handle route (open Google Maps)
   const handleRoute = (faskes: Faskes) => {
-    const url = `https://www.google.com/maps/dir/?api=1&destination=${faskes.latitude},${faskes.longitude}`;
+    const url = `https://www.google.com/maps/dir/?api=1&destination=${faskes.latitude},${faskes.longitude}${userLocation ? `&origin=${userLocation.lat},${userLocation.lng}` : ''}`;
     window.open(url, "_blank");
   };
 
@@ -398,6 +458,36 @@ export default function CariFaskesPage() {
         className="absolute bottom-4 left-4 top-24 z-[500] w-80 overflow-hidden rounded-2xl bg-white/95 shadow-xl backdrop-blur-sm lg:top-28"
       >
         <div className="flex h-full flex-col p-4">
+          {/* Header with Refresh */}
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-semibold text-gray-800">
+              Fasilitas Kesehatan Terdekat
+            </h2>
+            <button
+              onClick={handleRefresh}
+              disabled={isRefreshing}
+              className="p-1.5 rounded-lg hover:bg-gray-100 transition-colors disabled:opacity-50"
+              title="Refresh lokasi"
+            >
+              <RefreshCw className={`h-4 w-4 text-gray-500 ${isRefreshing ? 'animate-spin' : ''}`} />
+            </button>
+          </div>
+
+          {/* Location Status */}
+          {locationError && (
+            <div className="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 flex items-center gap-2">
+              <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+              <span>{locationError}</span>
+            </div>
+          )}
+          
+          {isGettingLocation && !locationError && (
+            <div className="mb-3 rounded-lg bg-blue-50 px-3 py-2 text-xs text-blue-700 flex items-center gap-2">
+              <Loader2 className="h-3.5 w-3.5 animate-spin flex-shrink-0" />
+              <span>Mencari lokasi Anda...</span>
+            </div>
+          )}
+
           {/* Search Input */}
           <div className="relative">
             <Search className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-400" />
@@ -405,18 +495,18 @@ export default function CariFaskesPage() {
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              placeholder="Cari berdasarkan lokasi atau nama klinik"
+              placeholder="Cari nama atau lokasi faskes..."
               className="w-full rounded-xl border border-gray-200 bg-white py-3 pl-10 pr-4 text-sm text-gray-800 placeholder-gray-400 focus:border-[#1D7CF3] focus:outline-none"
             />
           </div>
 
           {/* Filter Pills */}
-          <div className="mt-4 flex flex-wrap gap-2">
+          <div className="mt-3 flex flex-wrap gap-1.5">
             {filterOptions.map((option) => (
               <button
                 key={option.value}
                 onClick={() => setActiveFilter(option.value)}
-                className={`rounded-full px-4 py-1.5 text-xs font-medium transition-colors ${
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
                   activeFilter === option.value
                     ? "bg-[#1D7CF3] text-white"
                     : "border border-gray-200 bg-white text-gray-600 hover:bg-gray-50"
@@ -427,9 +517,33 @@ export default function CariFaskesPage() {
             ))}
           </div>
 
+          {/* Radius Selector */}
+          <div className="mt-3 flex items-center gap-2 text-xs text-gray-600">
+            <span>Radius:</span>
+            <select
+              value={radiusKm}
+              onChange={(e) => setRadiusKm(Number(e.target.value))}
+              className="rounded-lg border border-gray-200 px-2 py-1 text-xs focus:border-[#1D7CF3] focus:outline-none"
+            >
+              <option value={5}>5 km</option>
+              <option value={10}>10 km</option>
+              <option value={15}>15 km</option>
+              <option value={25}>25 km</option>
+              <option value={50}>50 km</option>
+            </select>
+            <span className="text-gray-400">
+              ({filteredFaskes.length} ditemukan)
+            </span>
+          </div>
+
           {/* Results List */}
-          <div className="mt-4 flex-1 space-y-3 overflow-y-auto pr-1">
-            {filteredFaskes.length > 0 ? (
+          <div className="mt-3 flex-1 space-y-3 overflow-y-auto pr-1">
+            {isLoading ? (
+              <div className="flex h-32 flex-col items-center justify-center">
+                <Loader2 className="h-6 w-6 animate-spin text-[#1D7CF3]" />
+                <span className="mt-2 text-sm text-gray-500">Mencari faskes terdekat...</span>
+              </div>
+            ) : filteredFaskes.length > 0 ? (
               filteredFaskes.map((faskes) => (
                 <FaskesCard
                   key={faskes.id}
@@ -439,8 +553,21 @@ export default function CariFaskesPage() {
                 />
               ))
             ) : (
-              <div className="flex h-32 items-center justify-center text-sm text-gray-500">
-                Tidak ada hasil ditemukan
+              <div className="flex h-32 flex-col items-center justify-center text-center">
+                <MapPin className="h-8 w-8 text-gray-300 mb-2" />
+                <p className="text-sm text-gray-500">
+                  {faskesData.length === 0
+                    ? "Tidak ada faskes dalam radius ini"
+                    : "Tidak ada hasil ditemukan"}
+                </p>
+                {faskesData.length === 0 && (
+                  <button
+                    onClick={() => setRadiusKm(radiusKm + 10)}
+                    className="mt-2 text-xs text-[#1D7CF3] hover:underline"
+                  >
+                    Perluas radius pencarian
+                  </button>
+                )}
               </div>
             )}
           </div>
@@ -456,6 +583,7 @@ export default function CariFaskesPage() {
               setShowDetailModal(false);
               setSelectedFaskes(null);
             }}
+            onRoute={handleRoute}
           />
         )}
       </AnimatePresence>

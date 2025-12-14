@@ -4,11 +4,11 @@ import { useEffect, useRef } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-// Types
+// Types - Updated to match backend types
 interface Faskes {
   id: string;
   name: string;
-  type: "rumah-sakit" | "klinik" | "lab";
+  type: "HOSPITAL" | "PHARMACY" | "CLINIC" | "PUSKESMAS" | "LAB";
   address: string;
   latitude: number;
   longitude: number;
@@ -17,6 +17,8 @@ interface Faskes {
   distance: number;
   duration: number;
   image: string;
+  city?: string;
+  province?: string;
 }
 
 interface MapComponentProps {
@@ -26,25 +28,39 @@ interface MapComponentProps {
   selectedFaskes: Faskes | null;
 }
 
-// Custom marker icon
-const createMarkerIcon = (isSelected: boolean = false) => {
+// Get marker color based on facility type
+function getMarkerColor(type: Faskes["type"]): string {
+  const colors: Record<string, string> = {
+    HOSPITAL: "#EF4444",    // Red
+    PHARMACY: "#22C55E",    // Green
+    CLINIC: "#3B82F6",      // Blue
+    PUSKESMAS: "#F97316",   // Orange
+    LAB: "#8B5CF6",         // Purple
+  };
+  return colors[type] || "#1E293B";
+}
+
+// Custom marker icon with type-based colors
+const createMarkerIcon = (type: Faskes["type"], isSelected: boolean = false) => {
+  const color = isSelected ? "#F97316" : getMarkerColor(type);
   return L.divIcon({
     className: "custom-marker",
     html: `
       <div style="
         width: 32px;
         height: 32px;
-        background: ${isSelected ? "#F97316" : "#1E293B"};
+        background: ${color};
         border-radius: 50% 50% 50% 0;
         transform: rotate(-45deg);
         display: flex;
         align-items: center;
         justify-content: center;
         box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        border: 2px solid white;
       ">
         <div style="
-          width: 12px;
-          height: 12px;
+          width: 10px;
+          height: 10px;
           background: white;
           border-radius: 50%;
           transform: rotate(45deg);
@@ -84,20 +100,21 @@ export default function MapComponent({
   const mapContainerRef = useRef<HTMLDivElement>(null);
   const markersRef = useRef<L.Marker[]>([]);
   const userMarkerRef = useRef<L.Marker | null>(null);
+  const hasInitializedRef = useRef(false);
 
   // Initialize map
   useEffect(() => {
     if (!mapContainerRef.current || mapRef.current) return;
 
-    // Default center (Semarang)
-    const defaultCenter: L.LatLngExpression = [-6.9932, 110.4203];
+    // Use userLocation if available, otherwise default to Semarang
+    const center: L.LatLngExpression = userLocation
+      ? [userLocation.lat, userLocation.lng]
+      : [-6.9932, 110.4203];
 
     // Create map
     mapRef.current = L.map(mapContainerRef.current, {
-      center: userLocation
-        ? [userLocation.lat, userLocation.lng]
-        : defaultCenter,
-      zoom: 14,
+      center: center,
+      zoom: 13,
       zoomControl: false,
     });
 
@@ -110,10 +127,13 @@ export default function MapComponent({
         '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(mapRef.current);
 
+    hasInitializedRef.current = true;
+
     return () => {
       if (mapRef.current) {
         mapRef.current.remove();
         mapRef.current = null;
+        hasInitializedRef.current = false;
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -131,12 +151,18 @@ export default function MapComponent({
     // Add new user marker
     userMarkerRef.current = L.marker([userLocation.lat, userLocation.lng], {
       icon: userMarkerIcon,
+      zIndexOffset: 1000, // Make sure user marker is on top
     })
       .addTo(mapRef.current)
       .bindPopup("Lokasi Anda");
 
-    // Center map on user location
-    mapRef.current.setView([userLocation.lat, userLocation.lng], 14);
+    // Center map on user location only if this is an update (not initial load)
+    if (hasInitializedRef.current) {
+      mapRef.current.setView([userLocation.lat, userLocation.lng], 13, {
+        animate: true,
+        duration: 0.5,
+      });
+    }
   }, [userLocation]);
 
   // Update faskes markers
@@ -151,22 +177,39 @@ export default function MapComponent({
     faskesList.forEach((faskes) => {
       const isSelected = selectedFaskes?.id === faskes.id;
       const marker = L.marker([faskes.latitude, faskes.longitude], {
-        icon: createMarkerIcon(isSelected),
+        icon: createMarkerIcon(faskes.type, isSelected),
       })
         .addTo(mapRef.current!)
         .on("click", () => {
           onMarkerClick(faskes);
         });
 
-      // Add tooltip on hover
-      marker.bindTooltip(faskes.name, {
+      // Add tooltip on hover with distance info
+      marker.bindTooltip(`${faskes.name} (${faskes.distance} km)`, {
         direction: "top",
         offset: [0, -32],
       });
 
       markersRef.current.push(marker);
     });
-  }, [faskesList, selectedFaskes, onMarkerClick]);
+
+    // If we have markers and a user location, fit bounds to show all markers
+    if (faskesList.length > 0 && userLocation && mapRef.current) {
+      const allPoints: L.LatLngExpression[] = [
+        [userLocation.lat, userLocation.lng],
+        ...faskesList.map((f) => [f.latitude, f.longitude] as L.LatLngExpression),
+      ];
+      
+      // Only fit bounds if there are multiple points
+      if (allPoints.length > 1) {
+        const bounds = L.latLngBounds(allPoints);
+        mapRef.current.fitBounds(bounds, {
+          padding: [50, 50],
+          maxZoom: 14,
+        });
+      }
+    }
+  }, [faskesList, selectedFaskes, onMarkerClick, userLocation]);
 
   // Pan to selected faskes
   useEffect(() => {
