@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { motion } from "framer-motion";
 import { ChevronDown } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import {
   AreaChart,
   Area,
@@ -13,6 +13,17 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import {
+  getMyIncome,
+  getMyDashboard,
+  getMyDoctorProfile,
+  formatCurrency,
+  formatDate,
+  calculateAge,
+  DoctorIncome,
+  DoctorDashboard,
+  Doctor,
+} from "@/lib/api/doctor";
 
 // Types
 interface StatistikData {
@@ -20,7 +31,7 @@ interface StatistikData {
   value: number;
 }
 
-interface RiwayatPendapatan {
+interface RiwayatItem {
   id: string;
   patientName: string;
   patientAge: string;
@@ -34,58 +45,6 @@ interface DashboardStats {
   pendapatan: string;
   appointments: number;
 }
-
-// Default data
-const defaultStatistikData: StatistikData[] = [
-  { name: "0", value: 45 },
-  { name: "Jan", value: 50 },
-  { name: "Feb", value: 48 },
-  { name: "Mar", value: 52 },
-  { name: "Apr", value: 45 },
-  { name: "May", value: 60 },
-  { name: "Jun", value: 55 },
-  { name: "Jul", value: 75 },
-  { name: "Aug", value: 90 },
-  { name: "Sep", value: 85 },
-  { name: "Oct", value: 95 },
-  { name: "Nov", value: 70 },
-  { name: "Dec", value: 65 },
-];
-
-const defaultRiwayat: RiwayatPendapatan[] = [
-  {
-    id: "1",
-    patientName: "Erna Handayani",
-    patientAge: "42 tahun",
-    tanggal: "18 Desember 2025",
-    durasi: "2 jam",
-    biaya: "Rp250.000",
-  },
-  {
-    id: "2",
-    patientName: "Erna Handayani",
-    patientAge: "42 tahun",
-    tanggal: "18 Desember 2025",
-    durasi: "2 jam",
-    biaya: "Rp250.000",
-  },
-  {
-    id: "3",
-    patientName: "Erna Handayani",
-    patientAge: "42 tahun",
-    tanggal: "18 Desember 2025",
-    durasi: "2 jam",
-    biaya: "Rp250.000",
-  },
-  {
-    id: "4",
-    patientName: "Erna Handayani",
-    patientAge: "42 tahun",
-    tanggal: "18 Desember 2025",
-    durasi: "2 jam",
-    biaya: "Rp250.000",
-  },
-];
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -135,13 +94,23 @@ function StatistikPendapatanChart({
   data,
   selectedPeriod,
   onPeriodChange,
+  totalIncome,
+  percentChange,
+  isLoading,
 }: {
   data: StatistikData[];
   selectedPeriod: string;
   onPeriodChange: (period: string) => void;
+  totalIncome: number;
+  percentChange: number;
+  isLoading: boolean;
 }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const periods = ["Tahun ini", "Bulan ini", "Minggu ini"];
+
+  // Find max value for dynamic Y axis
+  const maxValue = Math.max(...data.map(d => d.value), 1);
+  const yAxisMax = Math.ceil(maxValue / 10) * 10 + 10;
 
   return (
     <motion.div variants={itemVariants} className="rounded-2xl bg-white p-5 lg:p-6">
@@ -151,15 +120,25 @@ function StatistikPendapatanChart({
             Statistik Pendapatan
           </h3>
           <div className="mt-2 flex flex-wrap items-center gap-3">
-            <span className="text-2xl font-bold text-gray-800 lg:text-3xl">
-              Rp45.050.000
-            </span>
-            <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-medium text-green-600">
-              +20%
-            </span>
-            <span className="text-sm text-gray-500">
-              Meningkat dibanding tahun lalu
-            </span>
+            {isLoading ? (
+              <div className="h-8 w-32 animate-pulse rounded bg-gray-200" />
+            ) : (
+              <>
+                <span className="text-2xl font-bold text-gray-800 lg:text-3xl">
+                  {formatCurrency(totalIncome)}
+                </span>
+                {percentChange !== 0 && (
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                    percentChange >= 0 ? 'bg-green-100 text-green-600' : 'bg-red-100 text-red-600'
+                  }`}>
+                    {percentChange >= 0 ? '+' : ''}{percentChange.toFixed(0)}%
+                  </span>
+                )}
+                <span className="text-sm text-gray-500">
+                  {percentChange >= 0 ? 'Meningkat' : 'Menurun'} dibanding periode lalu
+                </span>
+              </>
+            )}
           </div>
         </div>
 
@@ -201,48 +180,53 @@ function StatistikPendapatanChart({
       </div>
 
       <div className="h-[280px] lg:h-[320px]">
-        <ResponsiveContainer width="100%" height="100%">
-          <AreaChart data={data}>
-            <defs>
-              <linearGradient id="colorPendapatan" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#1D7CF3" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#1D7CF3" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-            <XAxis
-              dataKey="name"
-              axisLine={false}
-              tickLine={false}
-              tick={{ fill: "#94A3B8", fontSize: 12 }}
-              dy={10}
-            />
-            <YAxis
-              axisLine={false}
-              tickLine={false}
-              tick={{ fill: "#94A3B8", fontSize: 12 }}
-              domain={[0, 100]}
-              ticks={[50, 100]}
-              tickFormatter={(value) => `${value} juta`}
-            />
-            <Tooltip
-              contentStyle={{
-                backgroundColor: "#fff",
-                border: "1px solid #e5e7eb",
-                borderRadius: "8px",
-                boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
-              }}
-              formatter={(value: number) => [`Rp${value} juta`, "Pendapatan"]}
-            />
-            <Area
-              type="monotone"
-              dataKey="value"
-              stroke="#1D7CF3"
-              strokeWidth={2}
-              fill="url(#colorPendapatan)"
-            />
-          </AreaChart>
-        </ResponsiveContainer>
+        {isLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#1D7CF3] border-t-transparent" />
+          </div>
+        ) : (
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data}>
+              <defs>
+                <linearGradient id="colorPendapatan" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#1D7CF3" stopOpacity={0.3} />
+                  <stop offset="95%" stopColor="#1D7CF3" stopOpacity={0} />
+                </linearGradient>
+              </defs>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <XAxis
+                dataKey="name"
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: "#94A3B8", fontSize: 12 }}
+                dy={10}
+              />
+              <YAxis
+                axisLine={false}
+                tickLine={false}
+                tick={{ fill: "#94A3B8", fontSize: 12 }}
+                domain={[0, yAxisMax]}
+                tickFormatter={(value) => `${(value / 1000000).toFixed(0)} jt`}
+              />
+              <Tooltip
+                contentStyle={{
+                  backgroundColor: "#fff",
+                  border: "1px solid #e5e7eb",
+                  borderRadius: "8px",
+                  boxShadow: "0 4px 6px -1px rgba(0, 0, 0, 0.1)",
+                }}
+                formatter={(value: number) => [formatCurrency(value), "Pendapatan"]}
+              />
+              <Area
+                type="monotone"
+                dataKey="value"
+                stroke="#1D7CF3"
+                strokeWidth={2}
+                fill="url(#colorPendapatan)"
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        )}
       </div>
     </motion.div>
   );
@@ -253,10 +237,12 @@ function RiwayatPendapatanTable({
   data,
   selectedPeriod,
   onPeriodChange,
+  isLoading,
 }: {
-  data: RiwayatPendapatan[];
+  data: RiwayatItem[];
   selectedPeriod: string;
   onPeriodChange: (period: string) => void;
+  isLoading: boolean;
 }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const periods = ["Tahun ini", "Bulan ini", "Minggu ini"];
@@ -307,68 +293,214 @@ function RiwayatPendapatanTable({
 
       {/* Table */}
       <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="border-b border-gray-100">
-              <th className="pb-4 text-left text-sm font-medium text-gray-500">
-                Pasien
-              </th>
-              <th className="pb-4 text-left text-sm font-medium text-gray-500">
-                Tanggal
-              </th>
-              <th className="pb-4 text-left text-sm font-medium text-gray-500">
-                Durasi
-              </th>
-              <th className="pb-4 text-left text-sm font-medium text-gray-500">
-                Biaya
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {data.map((item) => (
-              <tr key={item.id} className="border-b border-gray-50">
-                <td className="py-4">
-                  <div className="flex items-center gap-3">
-                    <div className="relative h-10 w-10 overflow-hidden rounded-full">
-                      <Image
-                        src="/images/assets/patient-avatar.svg"
-                        alt={item.patientName}
-                        fill
-                        className="object-cover"
-                      />
-                    </div>
-                    <div>
-                      <p className="font-medium text-gray-800">
-                        {item.patientName}
-                      </p>
-                      <p className="text-sm text-gray-500">{item.patientAge}</p>
-                    </div>
-                  </div>
-                </td>
-                <td className="py-4 text-sm text-gray-600">{item.tanggal}</td>
-                <td className="py-4 text-sm text-gray-600">{item.durasi}</td>
-                <td className="py-4 text-sm font-medium text-[#1D7CF3]">
-                  {item.biaya}
-                </td>
+        {isLoading ? (
+          <div className="flex h-40 items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#1D7CF3] border-t-transparent" />
+          </div>
+        ) : data.length === 0 ? (
+          <div className="flex h-40 items-center justify-center">
+            <p className="text-gray-500">Belum ada riwayat pendapatan</p>
+          </div>
+        ) : (
+          <table className="w-full">
+            <thead>
+              <tr className="border-b border-gray-100">
+                <th className="pb-4 text-left text-sm font-medium text-gray-500">
+                  Pasien
+                </th>
+                <th className="pb-4 text-left text-sm font-medium text-gray-500">
+                  Tanggal
+                </th>
+                <th className="pb-4 text-left text-sm font-medium text-gray-500">
+                  Durasi
+                </th>
+                <th className="pb-4 text-left text-sm font-medium text-gray-500">
+                  Biaya
+                </th>
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {data.map((item) => (
+                <tr key={item.id} className="border-b border-gray-50">
+                  <td className="py-4">
+                    <div className="flex items-center gap-3">
+                      <div className="relative h-10 w-10 overflow-hidden rounded-full">
+                        <Image
+                          src="/images/assets/patient-avatar.svg"
+                          alt={item.patientName}
+                          fill
+                          className="object-cover"
+                        />
+                      </div>
+                      <div>
+                        <p className="font-medium text-gray-800">
+                          {item.patientName}
+                        </p>
+                        <p className="text-sm text-gray-500">{item.patientAge}</p>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="py-4 text-sm text-gray-600">{item.tanggal}</td>
+                  <td className="py-4 text-sm text-gray-600">{item.durasi}</td>
+                  <td className="py-4 text-sm font-medium text-[#1D7CF3]">
+                    {item.biaya}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
       </div>
     </motion.div>
   );
 }
 
+// Loading Skeleton
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="h-32 animate-pulse rounded-2xl bg-gray-200" />
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-24 animate-pulse rounded-xl bg-gray-200" />
+        ))}
+      </div>
+      <div className="h-[350px] animate-pulse rounded-2xl bg-gray-200" />
+      <div className="h-64 animate-pulse rounded-2xl bg-gray-200" />
+    </div>
+  );
+}
+
 export default function PendapatanPage() {
-  const [statistikData] = useState<StatistikData[]>(defaultStatistikData);
-  const [riwayatData] = useState<RiwayatPendapatan[]>(defaultRiwayat);
-  const [stats] = useState<DashboardStats>({
-    totalPasien: 209,
-    pendapatan: "Rp12.050.000",
-    appointments: 4,
-  });
+  const [doctorProfile, setDoctorProfile] = useState<Doctor | null>(null);
+  const [dashboard, setDashboard] = useState<DoctorDashboard | null>(null);
+  const [incomeData, setIncomeData] = useState<DoctorIncome | null>(null);
+  const [statistikData, setStatistikData] = useState<StatistikData[]>([]);
+  const [riwayatData, setRiwayatData] = useState<RiwayatItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isChartLoading, setIsChartLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  
   const [chartPeriod, setChartPeriod] = useState("Tahun ini");
   const [tablePeriod, setTablePeriod] = useState("Tahun ini");
+
+  // Convert period to API format
+  const getPeriodParam = (period: string): 'year' | 'month' | 'week' => {
+    switch (period) {
+      case "Tahun ini": return 'year';
+      case "Bulan ini": return 'month';
+      case "Minggu ini": return 'week';
+      default: return 'year';
+    }
+  };
+
+  // Fetch initial data
+  const fetchData = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const [profileRes, dashboardRes, incomeRes] = await Promise.all([
+        getMyDoctorProfile(),
+        getMyDashboard(),
+        getMyIncome(getPeriodParam(chartPeriod)),
+      ]);
+      
+      setDoctorProfile(profileRes);
+      setDashboard(dashboardRes);
+      setIncomeData(incomeRes);
+      
+      // Transform monthly income to chart data
+      if (incomeRes.monthly_income && Array.isArray(incomeRes.monthly_income)) {
+        const chartData = incomeRes.monthly_income.map((item) => ({
+          name: typeof item === 'object' ? item.month : '',
+          value: typeof item === 'object' ? item.income : item,
+        }));
+        setStatistikData(chartData);
+      }
+      
+      // Note: recent_bookings removed from DoctorIncome type
+      // Riwayat data will be empty for now
+      setRiwayatData([]);
+    } catch (err) {
+      console.error('Error fetching income data:', err);
+      setError(err instanceof Error ? err.message : 'Gagal memuat data pendapatan');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [chartPeriod]);
+
+  // Fetch income when chart period changes
+  const fetchIncomeByPeriod = useCallback(async (period: string) => {
+    try {
+      setIsChartLoading(true);
+      const incomeRes = await getMyIncome(getPeriodParam(period));
+      setIncomeData(incomeRes);
+      
+      // Transform monthly income to chart data
+      if (incomeRes.monthly_income && Array.isArray(incomeRes.monthly_income)) {
+        const chartData = incomeRes.monthly_income.map((item) => ({
+          name: typeof item === 'object' ? item.month : '',
+          value: typeof item === 'object' ? item.income : item,
+        }));
+        setStatistikData(chartData);
+      }
+    } catch (err) {
+      console.error('Error fetching income:', err);
+    } finally {
+      setIsChartLoading(false);
+    }
+  }, []);
+
+  // Calculate duration between times
+  function calculateDuration(startTime: string, endTime: string): string {
+    try {
+      const [startH, startM] = startTime.split(':').map(Number);
+      const [endH, endM] = endTime.split(':').map(Number);
+      const diffMinutes = (endH * 60 + endM) - (startH * 60 + startM);
+      const hours = Math.floor(diffMinutes / 60);
+      const minutes = diffMinutes % 60;
+      if (hours > 0 && minutes > 0) return `${hours} jam ${minutes} menit`;
+      if (hours > 0) return `${hours} jam`;
+      return `${minutes} menit`;
+    } catch {
+      return '-';
+    }
+  }
+
+  useEffect(() => {
+    fetchData();
+  }, [fetchData]);
+
+  // Handle chart period change
+  const handleChartPeriodChange = (period: string) => {
+    setChartPeriod(period);
+    fetchIncomeByPeriod(period);
+  };
+
+  if (isLoading) {
+    return <LoadingSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center rounded-2xl bg-white p-8">
+        <p className="mb-4 text-red-500">{error}</p>
+        <button
+          onClick={fetchData}
+          className="rounded-lg bg-[#1D7CF3] px-6 py-2 text-white hover:bg-[#1565D8]"
+        >
+          Coba Lagi
+        </button>
+      </div>
+    );
+  }
+
+  const stats: DashboardStats = {
+    totalPasien: dashboard?.summary?.total_patients || 0,
+    pendapatan: formatCurrency(incomeData?.total_income || 0),
+    appointments: dashboard?.summary?.upcoming_appointments || 0,
+  };
 
   return (
     <motion.div
@@ -395,7 +527,7 @@ export default function PendapatanPage() {
         <div className="relative z-10 flex flex-col items-center gap-4 p-6 sm:flex-row sm:justify-between lg:p-8">
           <div>
             <h1 className="text-xl font-bold text-gray-800 lg:text-2xl">
-              Halo, dr. Hanifa
+              Halo, dr. {doctorProfile?.full_name || 'Dokter'}
             </h1>
             <p className="mt-1 text-gray-500">Have a nice day!</p>
           </div>
@@ -410,10 +542,10 @@ export default function PendapatanPage() {
             />
             <div className="absolute inset-2 overflow-hidden rounded-full">
               <Image
-                src="/images/assets/hello-avatar.svg"
+                src={doctorProfile?.profile_picture || "/images/assets/hello-avatar.svg"}
                 alt="Doctor Avatar"
                 fill
-                className="object-contain"
+                className="object-cover"
               />
             </div>
           </div>
@@ -434,7 +566,10 @@ export default function PendapatanPage() {
       <StatistikPendapatanChart
         data={statistikData}
         selectedPeriod={chartPeriod}
-        onPeriodChange={setChartPeriod}
+        onPeriodChange={handleChartPeriodChange}
+        totalIncome={incomeData?.total_income || 0}
+        percentChange={incomeData?.percent_change || 0}
+        isLoading={isChartLoading}
       />
 
       {/* Riwayat Pendapatan Table */}
@@ -442,6 +577,7 @@ export default function PendapatanPage() {
         data={riwayatData}
         selectedPeriod={tablePeriod}
         onPeriodChange={setTablePeriod}
+        isLoading={isChartLoading}
       />
     </motion.div>
   );

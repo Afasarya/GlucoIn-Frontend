@@ -1,9 +1,18 @@
 "use client";
 
-import { useState } from "react";
-import { Clock, Calendar, FileText } from "lucide-react";
+import { useState, useEffect, use } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import Image from "next/image";
+import { Clock, Calendar, FileText, MapPin, ArrowLeft, User, AlertCircle } from "lucide-react";
 import { motion } from "framer-motion";
 import Navbar from "../../../components/common/Navbar";
+import {
+  createBooking,
+  CreateBookingDto,
+  formatCurrency,
+  getDayName,
+} from "@/lib/api/booking";
 
 // Animation variants
 const containerVariants = {
@@ -56,48 +65,174 @@ const summaryVariants = {
 // Consultation types
 const consultationTypes = [
   {
-    id: "online",
+    id: "ONLINE",
     title: "Online",
     description: "Video call langsung dari Glucoin",
-    pricePerHour: 100000,
+    priceMultiplier: 0.5, // 50% of base price
   },
   {
-    id: "offline",
+    id: "OFFLINE",
     title: "Langsung ke Tempat",
     description: "Bertemu langsung dengan Dokter",
-    pricePerHour: 250000,
+    priceMultiplier: 1, // Full price
   },
 ];
 
 // Duration options
 const durationOptions = [
-  { value: 1, label: "1 jam" },
-  { value: 2, label: "2 jam" },
-  { value: 3, label: "3 jam" },
+  { value: 60, label: "1 jam", hours: 1 },
+  { value: 120, label: "2 jam", hours: 2 },
+  { value: 180, label: "3 jam", hours: 3 },
 ];
 
-export default function BookingConfirmPage() {
-  const [duration, setDuration] = useState(2);
-  const [consultationType, setConsultationType] = useState("offline");
+interface PendingBookingData {
+  doctor_id: string;
+  doctor_name: string;
+  doctor_specialization: string;
+  doctor_image?: string;
+  doctor_price_range?: string;
+  schedule_id: string;
+  booking_date: string;
+  start_time: string;
+  duration_minutes: number;
+  consultation_fee: number;
+}
+
+interface PageProps {
+  params: Promise<{ id: string }>;
+}
+
+export default function BookingConfirmPage({ params }: PageProps) {
+  const { id } = use(params);
+  const router = useRouter();
+  
+  const [bookingData, setBookingData] = useState<PendingBookingData | null>(null);
+  const [duration, setDuration] = useState(60);
+  const [consultationType, setConsultationType] = useState<"ONLINE" | "OFFLINE">("OFFLINE");
   const [notes, setNotes] = useState("");
   const [adminFee] = useState(2500);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Load booking data from sessionStorage
+  useEffect(() => {
+    const storedData = sessionStorage.getItem('pendingBooking');
+    if (storedData) {
+      const data = JSON.parse(storedData) as PendingBookingData;
+      setBookingData(data);
+      if (data.duration_minutes) {
+        setDuration(data.duration_minutes);
+      }
+    } else {
+      // No booking data, redirect back
+      router.push(`/booking-dokter/${id}`);
+    }
+  }, [id, router]);
+
+  // Calculate end time based on start time and duration
+  const calculateEndTime = (startTime: string, durationMins: number): string => {
+    const [hours, minutes] = startTime.split(':').map(Number);
+    const totalMinutes = hours * 60 + minutes + durationMins;
+    const endHours = Math.floor(totalMinutes / 60) % 24;
+    const endMinutes = totalMinutes % 60;
+    return `${endHours.toString().padStart(2, '0')}:${endMinutes.toString().padStart(2, '0')}`;
+  };
 
   // Get selected consultation type details
   const selectedType = consultationTypes.find((t) => t.id === consultationType);
-  const consultationFee = (selectedType?.pricePerHour || 0) * duration;
+  
+  // Calculate consultation fee based on base price, duration and type
+  const baseHourlyRate = bookingData?.consultation_fee || 150000;
+  const durationHours = duration / 60;
+  const consultationFee = Math.round(baseHourlyRate * durationHours * (selectedType?.priceMultiplier || 1));
   const total = consultationFee + adminFee;
 
-  // Format currency
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat("id-ID").format(amount);
+  // Format date
+  const formatBookingDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('id-ID', {
+      weekday: 'long',
+      day: 'numeric',
+      month: 'long',
+      year: 'numeric'
+    });
   };
 
-  // Mock booking data (would come from previous page in real app)
-  const bookingData = {
-    date: "18 Desember 2025",
-    startTime: "12.00",
-    endTime: "14.00",
+  // Get day of week from date string
+  const getDayFromDate = (dateStr: string): string => {
+    const date = new Date(dateStr);
+    const days = ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY'];
+    return days[date.getDay()];
   };
+
+  // Handle booking submission
+  const handleSubmitBooking = async () => {
+    if (!bookingData) return;
+    
+    try {
+      setIsSubmitting(true);
+      setError(null);
+      
+      const endTime = calculateEndTime(bookingData.start_time, duration);
+      
+      const bookingDto: CreateBookingDto = {
+        doctor_id: bookingData.doctor_id,
+        schedule_id: bookingData.schedule_id,
+        booking_date: bookingData.booking_date,
+        start_time: bookingData.start_time,
+        end_time: endTime,
+        duration_minutes: duration,
+        consultation_type: consultationType,
+        consultation_fee: consultationFee,
+        notes: notes || undefined,
+      };
+      
+      const response = await createBooking(bookingDto);
+      
+      // Clear pending booking data
+      sessionStorage.removeItem('pendingBooking');
+      
+      // Store payment info for payment page
+      sessionStorage.setItem('paymentInfo', JSON.stringify({
+        booking_id: response.booking.id,
+        snap_token: response.payment.snap_token,
+        snap_redirect_url: response.payment.snap_redirect_url,
+        order_id: response.payment.order_id,
+        amount: response.payment.amount,
+        expiry_time: response.payment.expiry_time,
+        doctor_name: bookingData.doctor_name,
+        booking_date: bookingData.booking_date,
+        start_time: bookingData.start_time,
+        end_time: endTime,
+      }));
+      
+      // Redirect to payment page
+      router.push(`/booking-dokter/${id}/payment`);
+      
+    } catch (err) {
+      console.error('Error creating booking:', err);
+      setError(err instanceof Error ? err.message : 'Gagal membuat booking. Silakan coba lagi.');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (!bookingData) {
+    return (
+      <div className="min-h-screen bg-[#F3F4F6]">
+        <div className="bg-white">
+          <Navbar />
+        </div>
+        <div className="container mx-auto px-4 py-8">
+          <div className="flex items-center justify-center">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-[#1D7CF3] border-t-transparent" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const endTime = calculateEndTime(bookingData.start_time, duration);
 
   return (
     <div className="min-h-screen bg-[#F3F4F6]">
@@ -108,6 +243,29 @@ export default function BookingConfirmPage() {
 
       {/* Main content */}
       <div className="container mx-auto px-4 py-8 lg:px-8">
+        {/* Back button */}
+        <Link href={`/booking-dokter/${id}`}>
+          <motion.button
+            whileHover={{ x: -4 }}
+            className="mb-6 flex items-center gap-2 text-gray-600 hover:text-[#1D7CF3]"
+          >
+            <ArrowLeft className="h-5 w-5" />
+            <span>Kembali ke Detail Dokter</span>
+          </motion.button>
+        </Link>
+
+        {/* Error Alert */}
+        {error && (
+          <motion.div
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mb-6 flex items-center gap-3 rounded-lg bg-red-50 p-4 text-red-600"
+          >
+            <AlertCircle className="h-5 w-5" />
+            <p>{error}</p>
+          </motion.div>
+        )}
+
         <div className="flex flex-col gap-6 lg:flex-row">
           {/* Left Section - Form */}
           <motion.div
@@ -122,6 +280,34 @@ export default function BookingConfirmPage() {
               animate="visible"
               className="space-y-6"
             >
+              {/* Doctor Info Card */}
+              <motion.div
+                variants={itemVariants}
+                className="rounded-2xl bg-white p-6 shadow-sm"
+              >
+                <div className="mb-4 flex items-center gap-2">
+                  <User className="h-5 w-5 text-[#1D7CF3]" />
+                  <h2 className="text-lg font-bold text-gray-800">
+                    Informasi Dokter
+                  </h2>
+                </div>
+
+                <div className="flex items-center gap-4">
+                  <div className="relative h-16 w-16 overflow-hidden rounded-full bg-[#EEF8FF]">
+                    <Image
+                      src={bookingData.doctor_image || "/images/assets/doctor-elipse.svg"}
+                      alt={bookingData.doctor_name}
+                      fill
+                      className="object-cover"
+                    />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-gray-800">{bookingData.doctor_name}</h3>
+                    <p className="text-sm text-gray-500">{bookingData.doctor_specialization}</p>
+                    <p className="text-sm text-[#1D7CF3]">{bookingData.doctor_price_range}</p>
+                  </div>
+                </div>
+              </motion.div>
               {/* Durasi Konsultasi */}
               <motion.div
                 variants={itemVariants}
@@ -170,14 +356,16 @@ export default function BookingConfirmPage() {
                 className="rounded-2xl bg-white p-6 shadow-sm"
               >
                 <div className="mb-4 flex items-center gap-2">
-                  <Clock className="h-5 w-5 text-[#1D7CF3]" />
+                  <MapPin className="h-5 w-5 text-[#1D7CF3]" />
                   <h2 className="text-lg font-bold text-gray-800">
                     Jenis Konsultasi
                   </h2>
                 </div>
 
                 <div className="space-y-3">
-                  {consultationTypes.map((type) => (
+                  {consultationTypes.map((type) => {
+                    const typePrice = Math.round(baseHourlyRate * durationHours * type.priceMultiplier);
+                    return (
                     <motion.label
                       key={type.id}
                       whileHover={{ scale: 1.01 }}
@@ -215,20 +403,20 @@ export default function BookingConfirmPage() {
                       </div>
                       <div className="text-right">
                         <span className="text-lg font-bold text-[#1D7CF3]">
-                          Rp{formatCurrency(type.pricePerHour)}
+                          {formatCurrency(typePrice)}
                         </span>
-                        <span className="text-sm text-gray-500"> /jam</span>
                       </div>
                       <input
                         type="radio"
                         name="consultationType"
                         value={type.id}
                         checked={consultationType === type.id}
-                        onChange={(e) => setConsultationType(e.target.value)}
+                        onChange={(e) => setConsultationType(e.target.value as "ONLINE" | "OFFLINE")}
                         className="sr-only"
                       />
                     </motion.label>
-                  ))}
+                    );
+                  })}
                 </div>
               </motion.div>
 
@@ -273,22 +461,22 @@ export default function BookingConfirmPage() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Tanggal</span>
-                  <span className="font-semibold text-gray-800">
-                    {bookingData.date}
+                  <span className="font-semibold text-gray-800 text-right text-sm">
+                    {formatBookingDate(bookingData.booking_date)}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Waktu</span>
                   <span className="font-semibold text-gray-800">
-                    {bookingData.startTime} - {bookingData.endTime}
+                    {bookingData.start_time.replace(':', '.')} - {endTime.replace(':', '.')}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Durasi Konsultasi</span>
                   <span className="font-semibold text-gray-800">
-                    {duration} jam
+                    {duration / 60} jam
                   </span>
                 </div>
 
@@ -304,14 +492,14 @@ export default function BookingConfirmPage() {
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Biaya Konsultasi</span>
                   <span className="font-semibold text-gray-800">
-                    Rp{formatCurrency(consultationFee)}
+                    {formatCurrency(consultationFee)}
                   </span>
                 </div>
 
                 <div className="flex items-center justify-between">
                   <span className="text-gray-500">Biaya Admin</span>
                   <span className="font-semibold text-gray-800">
-                    Rp{formatCurrency(adminFee)}
+                    {formatCurrency(adminFee)}
                   </span>
                 </div>
 
@@ -319,19 +507,32 @@ export default function BookingConfirmPage() {
 
                 <div className="flex items-center justify-between">
                   <span className="font-semibold text-gray-800">Total</span>
-                  <span className="text-lg font-bold text-gray-800">
-                    Rp{formatCurrency(total)}
+                  <span className="text-lg font-bold text-[#1D7CF3]">
+                    {formatCurrency(total)}
                   </span>
                 </div>
               </div>
 
               {/* Booking Button */}
               <motion.button
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                className="mt-6 w-full rounded-full bg-[#1D7CF3] py-3.5 text-base font-semibold text-white transition-colors hover:bg-[#1565D8]"
+                whileHover={!isSubmitting ? { scale: 1.02 } : {}}
+                whileTap={!isSubmitting ? { scale: 0.98 } : {}}
+                onClick={handleSubmitBooking}
+                disabled={isSubmitting}
+                className={`mt-6 w-full rounded-full py-3.5 text-base font-semibold transition-colors ${
+                  isSubmitting
+                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
+                    : "bg-[#1D7CF3] text-white hover:bg-[#1565D8]"
+                }`}
               >
-                Booking
+                {isSubmitting ? (
+                  <span className="flex items-center justify-center gap-2">
+                    <div className="h-5 w-5 animate-spin rounded-full border-2 border-white border-t-transparent" />
+                    Memproses...
+                  </span>
+                ) : (
+                  "Lanjut ke Pembayaran"
+                )}
               </motion.button>
             </div>
           </motion.div>

@@ -4,83 +4,24 @@ import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Search, ChevronDown, List, LayoutGrid, ArrowRight } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
+import {
+  getDoctorBookings,
+  formatDate,
+  formatTimeRange,
+  getBookingStatusLabel,
+  getBookingStatusColor,
+  calculateAge,
+  Booking,
+} from "@/lib/api/doctor";
 
 // Types
-interface Konsultasi {
-  id: string;
-  patientName: string;
-  patientAge: string;
-  jadwalTanggal: string;
-  jadwalWaktu: string;
-  jenisPemeriksaan: string;
-  status: "mendatang" | "selesai";
-}
-
 interface StatsData {
   konsultasiHariIni: number;
   semuaKonsultasi: number;
   konsultasiBulanIni: number;
   konsultasiSelesai: number;
 }
-
-// Default data
-const defaultKonsultasi: Konsultasi[] = [
-  {
-    id: "1",
-    patientName: "Erna Handayani",
-    patientAge: "42 tahun",
-    jadwalTanggal: "18 Desember 2025",
-    jadwalWaktu: "10.00 - 11.00",
-    jenisPemeriksaan: "Langsung ke tempat",
-    status: "mendatang",
-  },
-  {
-    id: "2",
-    patientName: "Erna Handayani",
-    patientAge: "42 tahun",
-    jadwalTanggal: "18 Desember 2025",
-    jadwalWaktu: "10.00 - 11.00",
-    jenisPemeriksaan: "Langsung ke tempat",
-    status: "mendatang",
-  },
-  {
-    id: "3",
-    patientName: "Erna Handayani",
-    patientAge: "42 tahun",
-    jadwalTanggal: "18 Desember 2025",
-    jadwalWaktu: "10.00 - 11.00",
-    jenisPemeriksaan: "Langsung ke tempat",
-    status: "mendatang",
-  },
-  {
-    id: "4",
-    patientName: "Erna Handayani",
-    patientAge: "42 tahun",
-    jadwalTanggal: "18 Desember 2025",
-    jadwalWaktu: "10.00 - 11.00",
-    jenisPemeriksaan: "Langsung ke tempat",
-    status: "selesai",
-  },
-  {
-    id: "5",
-    patientName: "Erna Handayani",
-    patientAge: "42 tahun",
-    jadwalTanggal: "18 Desember 2025",
-    jadwalWaktu: "10.00 - 11.00",
-    jenisPemeriksaan: "Langsung ke tempat",
-    status: "selesai",
-  },
-  {
-    id: "6",
-    patientName: "Erna Handayani",
-    patientAge: "42 tahun",
-    jadwalTanggal: "18 Desember 2025",
-    jadwalWaktu: "10.00 - 11.00",
-    jenisPemeriksaan: "Langsung ke tempat",
-    status: "selesai",
-  },
-];
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -112,9 +53,17 @@ function StatsCard({ value, label }: { value: number; label: string }) {
 }
 
 // Konsultasi Card Component
-function KonsultasiCard({ konsultasi }: { konsultasi: Konsultasi }) {
+function KonsultasiCard({ booking }: { booking: Booking }) {
+  const patientAge = booking.user?.date_of_birth 
+    ? `${calculateAge(booking.user.date_of_birth)} tahun`
+    : '-';
+  
+  const statusColor = getBookingStatusColor(booking.status);
+  const statusLabel = getBookingStatusLabel(booking.status);
+  const isCompleted = booking.status === 'COMPLETED';
+  
   return (
-    <Link href={`/dokter-dashboard/konsultasi/${konsultasi.id}`}>
+    <Link href={`/dokter-dashboard/konsultasi/${booking.id}`}>
       <motion.div
         variants={itemVariants}
         className="cursor-pointer rounded-2xl bg-white p-5 transition-shadow hover:shadow-md"
@@ -125,24 +74,20 @@ function KonsultasiCard({ konsultasi }: { konsultasi: Konsultasi }) {
             <div className="relative h-12 w-12 overflow-hidden rounded-full">
               <Image
                 src="/images/assets/patient-avatar.svg"
-                alt={konsultasi.patientName}
+                alt={booking.user?.full_name || 'Pasien'}
                 fill
                 className="object-cover"
               />
             </div>
             <div>
-              <p className="font-semibold text-gray-800">{konsultasi.patientName}</p>
-              <p className="text-sm text-gray-500">{konsultasi.patientAge}</p>
+              <p className="font-semibold text-gray-800">{booking.user?.full_name || 'Pasien'}</p>
+              <p className="text-sm text-gray-500">{patientAge}</p>
             </div>
           </div>
           <span
-            className={`rounded-full px-3 py-1 text-xs font-medium ${
-              konsultasi.status === "mendatang"
-                ? "bg-orange-50 text-[#F97316]"
-                : "bg-green-50 text-green-600"
-            }`}
+            className={`rounded-full px-3 py-1 text-xs font-medium ${statusColor.bg} ${statusColor.text}`}
           >
-            {konsultasi.status}
+            {isCompleted ? 'selesai' : 'mendatang'}
           </span>
         </div>
 
@@ -150,7 +95,7 @@ function KonsultasiCard({ konsultasi }: { konsultasi: Konsultasi }) {
         <div className="mt-5">
           <p className="text-sm text-gray-500">Jadwal Pemeriksaan</p>
           <p className="mt-1 text-sm font-medium text-gray-800">
-            {konsultasi.jadwalTanggal} · {konsultasi.jadwalWaktu}
+            {formatDate(booking.booking_date)} · {formatTimeRange(booking.start_time, booking.end_time)}
           </p>
         </div>
 
@@ -158,8 +103,15 @@ function KonsultasiCard({ konsultasi }: { konsultasi: Konsultasi }) {
         <div className="mt-4">
           <p className="text-sm text-gray-500">Jenis Pemeriksaan</p>
           <p className="mt-1 text-sm font-medium text-[#1D7CF3]">
-            {konsultasi.jenisPemeriksaan}
+            {booking.consultation_type === 'ONLINE' ? 'Konsultasi Online' : 'Langsung ke tempat'}
           </p>
+        </div>
+
+        {/* Status Label */}
+        <div className="mt-4">
+          <span className={`inline-block rounded-full px-3 py-1 text-xs font-medium ${statusColor.bg} ${statusColor.text}`}>
+            {statusLabel}
+          </span>
         </div>
 
         {/* Chat Button */}
@@ -172,32 +124,153 @@ function KonsultasiCard({ konsultasi }: { konsultasi: Konsultasi }) {
   );
 }
 
+// Loading Skeleton
+function LoadingSkeleton() {
+  return (
+    <div className="space-y-6">
+      <div className="h-16 animate-pulse rounded-2xl bg-gray-200" />
+      <div className="h-12 animate-pulse rounded-lg bg-gray-200" />
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
+        {[1, 2, 3, 4].map((i) => (
+          <div key={i} className="h-24 animate-pulse rounded-xl bg-gray-200" />
+        ))}
+      </div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {[1, 2, 3, 4, 5, 6].map((i) => (
+          <div key={i} className="h-64 animate-pulse rounded-2xl bg-gray-200" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function KonsultasiPage() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [activeFilter, setActiveFilter] = useState("Hari Ini");
-  const [sortBy, setSortBy] = useState("Nama A-Z");
+  const [activeFilter, setActiveFilter] = useState("Semua");
+  const [sortBy, setSortBy] = useState("Terbaru");
   const [viewMode, setViewMode] = useState<"grid" | "list">("grid");
   const [isSortOpen, setIsSortOpen] = useState(false);
 
-  const [konsultasiData] = useState<Konsultasi[]>(defaultKonsultasi);
-  const [stats] = useState<StatsData>({
-    konsultasiHariIni: 6,
-    semuaKonsultasi: 126,
-    konsultasiBulanIni: 31,
-    konsultasiSelesai: 120,
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [stats, setStats] = useState<StatsData>({
+    konsultasiHariIni: 0,
+    semuaKonsultasi: 0,
+    konsultasiBulanIni: 0,
+    konsultasiSelesai: 0,
   });
 
   const filters = ["Hari Ini", "Mendatang", "Selesai", "Semua"];
   const sortOptions = ["Nama A-Z", "Nama Z-A", "Terbaru", "Terlama"];
 
-  // Filter konsultasi based on active filter
-  const filteredKonsultasi = konsultasiData.filter((k) => {
+  // Fetch bookings
+  const fetchBookings = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const data = await getDoctorBookings();
+      setBookings(data);
+      
+      // Calculate stats
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      
+      const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+      
+      const todayBookings = data.filter(b => {
+        const bookingDate = new Date(b.booking_date);
+        return bookingDate >= today && bookingDate < tomorrow;
+      });
+      
+      const monthBookings = data.filter(b => {
+        const bookingDate = new Date(b.booking_date);
+        return bookingDate >= thisMonth;
+      });
+      
+      const completedBookings = data.filter(b => b.status === 'COMPLETED');
+      
+      setStats({
+        konsultasiHariIni: todayBookings.length,
+        semuaKonsultasi: data.length,
+        konsultasiBulanIni: monthBookings.length,
+        konsultasiSelesai: completedBookings.length,
+      });
+    } catch (err) {
+      console.error('Error fetching bookings:', err);
+      setError(err instanceof Error ? err.message : 'Gagal memuat data konsultasi');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchBookings();
+  }, [fetchBookings]);
+
+  // Filter bookings based on active filter
+  const filteredBookings = bookings.filter((booking) => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    const bookingDate = new Date(booking.booking_date);
+    
+    // Search filter
+    if (searchQuery) {
+      const query = searchQuery.toLowerCase();
+      const matchesName = booking.user?.full_name?.toLowerCase().includes(query);
+      const matchesDate = formatDate(booking.booking_date).toLowerCase().includes(query);
+      if (!matchesName && !matchesDate) return false;
+    }
+    
     if (activeFilter === "Semua") return true;
-    if (activeFilter === "Hari Ini") return true; // For demo, show all
-    if (activeFilter === "Mendatang") return k.status === "mendatang";
-    if (activeFilter === "Selesai") return k.status === "selesai";
+    if (activeFilter === "Hari Ini") {
+      return bookingDate >= today && bookingDate < tomorrow;
+    }
+    if (activeFilter === "Mendatang") {
+      return bookingDate >= today && booking.status !== 'COMPLETED' && booking.status !== 'CANCELLED';
+    }
+    if (activeFilter === "Selesai") return booking.status === 'COMPLETED';
     return true;
   });
+
+  // Sort bookings
+  const sortedBookings = [...filteredBookings].sort((a, b) => {
+    switch (sortBy) {
+      case "Nama A-Z":
+        return (a.user?.full_name || '').localeCompare(b.user?.full_name || '');
+      case "Nama Z-A":
+        return (b.user?.full_name || '').localeCompare(a.user?.full_name || '');
+      case "Terbaru":
+        return new Date(b.booking_date).getTime() - new Date(a.booking_date).getTime();
+      case "Terlama":
+        return new Date(a.booking_date).getTime() - new Date(b.booking_date).getTime();
+      default:
+        return 0;
+    }
+  });
+
+  if (isLoading) {
+    return <LoadingSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center rounded-2xl bg-white p-8">
+        <p className="mb-4 text-red-500">{error}</p>
+        <button
+          onClick={fetchBookings}
+          className="rounded-lg bg-[#1D7CF3] px-6 py-2 text-white hover:bg-[#1565D8]"
+        >
+          Coba Lagi
+        </button>
+      </div>
+    );
+  }
 
   return (
     <motion.div
@@ -327,9 +400,19 @@ export default function KonsultasiPage() {
             : "grid-cols-1"
         }`}
       >
-        {filteredKonsultasi.map((konsultasi) => (
-          <KonsultasiCard key={konsultasi.id} konsultasi={konsultasi} />
-        ))}
+        {sortedBookings.length > 0 ? (
+          sortedBookings.map((booking) => (
+            <KonsultasiCard key={booking.id} booking={booking} />
+          ))
+        ) : (
+          <div className="col-span-full flex flex-col items-center justify-center rounded-2xl bg-white p-12 text-center">
+            <p className="text-gray-500">Tidak ada konsultasi ditemukan</p>
+            <p className="mt-1 text-sm text-gray-400">
+              {activeFilter !== "Semua" ? "Coba ubah filter atau " : ""}
+              {searchQuery ? "hapus pencarian" : ""}
+            </p>
+          </div>
+        )}
       </motion.div>
     </motion.div>
   );

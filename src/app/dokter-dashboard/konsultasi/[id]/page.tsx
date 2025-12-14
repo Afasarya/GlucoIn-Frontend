@@ -2,8 +2,21 @@
 
 import Image from "next/image";
 import { motion } from "framer-motion";
-import { FileText, Info, X, Plus } from "lucide-react";
-import { useState } from "react";
+import { FileText, Info, X, Plus, Loader2, ArrowLeft, CheckCircle } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import {
+  getBookingById,
+  confirmBooking,
+  completeBooking,
+  formatDate,
+  formatTimeRange,
+  calculateAge,
+  getBookingStatusLabel,
+  getBookingStatusColor,
+  Booking,
+} from "@/lib/api/doctor";
 
 // Types
 interface PatientData {
@@ -39,56 +52,6 @@ interface HasilPemeriksaanForm {
   catatan: string;
 }
 
-// Default data
-const defaultPatient: PatientData = {
-  id: "1",
-  name: "Erna Handayani",
-  age: "42 tahun",
-  avatar: "/images/assets/patient-avatar.svg",
-  tanggalLahir: "2 Februari 1982",
-  gender: "Perempuan",
-  alamat: "Jl. Prof Sudarto no 12, Tembalang, Kota Semarang",
-  golonganDarah: "-",
-  tekananDarah: "-",
-  alergi: "-",
-};
-
-const defaultRiwayat: RiwayatPemeriksaan[] = [
-  {
-    id: "1",
-    tanggal: "12 Desember 2025",
-    waktu: "10.00 - 11.00",
-    tipe: "Online",
-    kondisi: "Mengkhawatirkan",
-    pemeriksaan: "Analisis hasil lab",
-    dokter: "Dr. Alia Rahma",
-    catatan: "Kondisi sekarang lebih buruk dibanding hasil lab 14 hari yang lalu",
-    hasilLab: "Hasil lab 21-12-2025.pdf",
-  },
-  {
-    id: "2",
-    tanggal: "12 Desember 2025",
-    waktu: "10.00 - 11.00",
-    tipe: "Online",
-    kondisi: "Mengkhawatirkan",
-    pemeriksaan: "Analisis hasil lab",
-    dokter: "Dr. Alia Rahma",
-    catatan: "Kondisi sekarang lebih buruk dibanding hasil lab 14 hari yang lalu",
-    hasilLab: "Hasil lab 01-12-2025.pdf",
-  },
-  {
-    id: "3",
-    tanggal: "12 Desember 2025",
-    waktu: "10.00 - 11.00",
-    tipe: "Online",
-    kondisi: "Mengkhawatirkan",
-    pemeriksaan: "Analisis hasil lab",
-    dokter: "Dr. Alia Rahma",
-    catatan: "Kondisi sekarang lebih buruk dibanding hasil lab 14 hari yang lalu",
-    hasilLab: "Hasil lab 11-11-2025.pdf",
-  },
-];
-
 const containerVariants = {
   hidden: { opacity: 0 },
   visible: {
@@ -111,8 +74,35 @@ const itemVariants = {
 // Tab types
 type TabType = "informasi" | "riwayat" | "hasil";
 
+// Loading Skeleton
+function LoadingSkeleton() {
+  return (
+    <div className="rounded-2xl bg-white p-6 lg:p-8">
+      <div className="mb-6 flex items-center gap-4">
+        <div className="h-16 w-16 animate-pulse rounded-full bg-gray-200" />
+        <div className="space-y-2">
+          <div className="h-6 w-40 animate-pulse rounded bg-gray-200" />
+          <div className="h-4 w-24 animate-pulse rounded bg-gray-200" />
+        </div>
+      </div>
+      <div className="mb-6 border-b border-gray-100 pb-3">
+        <div className="flex gap-6">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-5 w-32 animate-pulse rounded bg-gray-200" />
+          ))}
+        </div>
+      </div>
+      <div className="space-y-4">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="h-20 animate-pulse rounded-lg bg-gray-200" />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // Informasi Pasien Tab Component
-function InformasiPasienTab({ patient }: { patient: PatientData }) {
+function InformasiPasienTab({ patient, booking }: { patient: PatientData; booking: Booking | null }) {
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible">
       {/* Data Pasien */}
@@ -159,6 +149,41 @@ function InformasiPasienTab({ patient }: { patient: PatientData }) {
           Edit Data
         </button>
       </motion.div>
+
+      {/* Booking Info */}
+      {booking && (
+        <motion.div variants={itemVariants} className="mt-8">
+          <h3 className="mb-4 text-sm font-semibold text-[#1D7CF3]">Info Booking</h3>
+          <div className="grid grid-cols-1 gap-6 rounded-lg bg-gray-50 p-4 md:grid-cols-3">
+            <div>
+              <p className="text-sm text-gray-500">Tanggal</p>
+              <p className="mt-1 font-medium text-gray-800">{formatDate(booking.booking_date)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Waktu</p>
+              <p className="mt-1 font-medium text-gray-800">{formatTimeRange(booking.start_time, booking.end_time)}</p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Tipe Konsultasi</p>
+              <p className="mt-1 font-medium text-gray-800">
+                {booking.consultation_type === 'ONLINE' ? 'Online' : 'Langsung ke tempat'}
+              </p>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">Status</p>
+              <span className={`mt-1 inline-block rounded-full px-3 py-1 text-xs font-medium ${getBookingStatusColor(booking.status).bg} ${getBookingStatusColor(booking.status).text}`}>
+                {getBookingStatusLabel(booking.status)}
+              </span>
+            </div>
+            {booking.notes && (
+              <div className="md:col-span-2">
+                <p className="text-sm text-gray-500">Catatan Pasien</p>
+                <p className="mt-1 font-medium text-gray-800">{booking.notes}</p>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
     </motion.div>
   );
 }
@@ -460,9 +485,122 @@ function HasilPemeriksaanTab() {
 }
 
 export default function DetailPasienPage() {
+  const params = useParams();
+  const router = useRouter();
+  const bookingId = params.id as string;
+
   const [activeTab, setActiveTab] = useState<TabType>("informasi");
-  const [patient] = useState<PatientData>(defaultPatient);
-  const [riwayat] = useState<RiwayatPemeriksaan[]>(defaultRiwayat);
+  const [booking, setBooking] = useState<Booking | null>(null);
+  const [patient, setPatient] = useState<PatientData | null>(null);
+  const [riwayat] = useState<RiwayatPemeriksaan[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isActionLoading, setIsActionLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Fetch booking details
+  const fetchBooking = useCallback(async () => {
+    if (!bookingId) return;
+    
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const bookingData = await getBookingById(bookingId);
+      setBooking(bookingData);
+      
+      // Transform booking user to patient data
+      if (bookingData.user) {
+        const user = bookingData.user;
+        setPatient({
+          id: user.id,
+          name: user.full_name || 'Pasien',
+          age: user.date_of_birth ? `${calculateAge(user.date_of_birth)} tahun` : '-',
+          avatar: user.profile_picture || '/images/assets/patient-avatar.svg',
+          tanggalLahir: user.date_of_birth 
+            ? new Date(user.date_of_birth).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })
+            : '-',
+          gender: user.gender || '-',
+          alamat: user.address || '-',
+          golonganDarah: '-',
+          tekananDarah: '-',
+          alergi: '-',
+        });
+      }
+    } catch (err) {
+      console.error('Error fetching booking:', err);
+      setError(err instanceof Error ? err.message : 'Gagal memuat data konsultasi');
+    } finally {
+      setIsLoading(false);
+    }
+  }, [bookingId]);
+
+  useEffect(() => {
+    fetchBooking();
+  }, [fetchBooking]);
+
+  // Handle confirm booking
+  const handleConfirm = async () => {
+    if (!booking) return;
+    
+    try {
+      setIsActionLoading(true);
+      await confirmBooking(booking.id);
+      await fetchBooking();
+    } catch (err) {
+      console.error('Error confirming booking:', err);
+      alert(err instanceof Error ? err.message : 'Gagal mengkonfirmasi booking');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  // Handle complete booking
+  const handleComplete = async () => {
+    if (!booking) return;
+    
+    try {
+      setIsActionLoading(true);
+      await completeBooking(booking.id);
+      await fetchBooking();
+    } catch (err) {
+      console.error('Error completing booking:', err);
+      alert(err instanceof Error ? err.message : 'Gagal menyelesaikan booking');
+    } finally {
+      setIsActionLoading(false);
+    }
+  };
+
+  const tabs = [
+    { id: "informasi" as TabType, label: "Informasi Pasien" },
+    { id: "riwayat" as TabType, label: "Riwayat Pemeriksaan" },
+    { id: "hasil" as TabType, label: "Hasil Pemeriksaan" },
+  ];
+
+  if (isLoading) {
+    return <LoadingSkeleton />;
+  }
+
+  if (error || !patient) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center rounded-2xl bg-white p-8">
+        <p className="mb-4 text-red-500">{error || 'Data tidak ditemukan'}</p>
+        <div className="flex gap-3">
+          <button
+            onClick={fetchBooking}
+            className="rounded-lg bg-[#1D7CF3] px-6 py-2 text-white hover:bg-[#1565D8]"
+          >
+            Coba Lagi
+          </button>
+          <Link
+            href="/dokter-dashboard/konsultasi"
+            className="rounded-lg border border-gray-200 px-6 py-2 text-gray-600 hover:bg-gray-50"
+          >
+            Kembali
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   const tabs = [
     { id: "informasi" as TabType, label: "Informasi Pasien" },
@@ -477,20 +615,73 @@ export default function DetailPasienPage() {
       animate="visible"
       className="rounded-2xl bg-white p-6 lg:p-8"
     >
+      {/* Back Button */}
+      <motion.div variants={itemVariants} className="mb-4">
+        <Link
+          href="/dokter-dashboard/konsultasi"
+          className="inline-flex items-center gap-2 text-sm text-gray-500 hover:text-gray-700"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Kembali ke Daftar Konsultasi
+        </Link>
+      </motion.div>
+
       {/* Patient Header */}
-      <motion.div variants={itemVariants} className="mb-6 flex items-center gap-4">
-        <div className="relative h-16 w-16 overflow-hidden rounded-full">
-          <Image
-            src={patient.avatar}
-            alt={patient.name}
-            fill
-            className="object-cover"
-          />
+      <motion.div variants={itemVariants} className="mb-6 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <div className="relative h-16 w-16 overflow-hidden rounded-full">
+            <Image
+              src={patient.avatar}
+              alt={patient.name}
+              fill
+              className="object-cover"
+            />
+          </div>
+          <div>
+            <h1 className="text-xl font-bold text-gray-800">{patient.name}</h1>
+            <p className="text-gray-500">{patient.age}</p>
+          </div>
         </div>
-        <div>
-          <h1 className="text-xl font-bold text-gray-800">{patient.name}</h1>
-          <p className="text-gray-500">{patient.age}</p>
-        </div>
+
+        {/* Action Buttons based on booking status */}
+        {booking && (
+          <div className="flex gap-3">
+            {booking.status === 'PENDING' && (
+              <button
+                onClick={handleConfirm}
+                disabled={isActionLoading}
+                className="flex items-center gap-2 rounded-lg bg-green-500 px-4 py-2 text-sm font-medium text-white hover:bg-green-600 disabled:opacity-50"
+              >
+                {isActionLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="h-4 w-4" />
+                )}
+                Konfirmasi
+              </button>
+            )}
+            {booking.status === 'CONFIRMED' && (
+              <button
+                onClick={handleComplete}
+                disabled={isActionLoading}
+                className="flex items-center gap-2 rounded-lg bg-[#1D7CF3] px-4 py-2 text-sm font-medium text-white hover:bg-[#1565D8] disabled:opacity-50"
+              >
+                {isActionLoading ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="h-4 w-4" />
+                )}
+                Selesaikan Konsultasi
+              </button>
+            )}
+            {booking.status === 'COMPLETED' && (
+              <span className="flex items-center gap-2 rounded-lg bg-green-100 px-4 py-2 text-sm font-medium text-green-700">
+                <CheckCircle className="h-4 w-4" />
+                Selesai
+              </span>
+            )}
+          </div>
+        )}
       </motion.div>
 
       {/* Tabs */}
@@ -520,7 +711,7 @@ export default function DetailPasienPage() {
 
       {/* Tab Content */}
       <div className="mt-6">
-        {activeTab === "informasi" && <InformasiPasienTab patient={patient} />}
+        {activeTab === "informasi" && <InformasiPasienTab patient={patient} booking={booking} />}
         {activeTab === "riwayat" && <RiwayatPemeriksaanTab riwayat={riwayat} />}
         {activeTab === "hasil" && <HasilPemeriksaanTab />}
       </div>

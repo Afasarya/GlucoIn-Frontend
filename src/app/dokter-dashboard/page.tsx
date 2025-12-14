@@ -3,8 +3,8 @@
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { ArrowRight, ChevronDown } from "lucide-react";
-import { useState } from "react";
+import { ArrowRight, ChevronDown, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
 import {
   AreaChart,
   Area,
@@ -14,49 +14,23 @@ import {
   Tooltip,
   ResponsiveContainer,
 } from "recharts";
+import {
+  getMyDashboard,
+  getMyIncome,
+  getMyDoctorProfile,
+  formatCurrency,
+  formatTimeRange,
+  DoctorDashboard,
+  DoctorIncome,
+  Doctor,
+  AppointmentDetail,
+} from "@/lib/api/doctor";
 
-// Types for data fetching
+// Types for chart data
 interface StatistikData {
   name: string;
   value: number;
 }
-
-interface Appointment {
-  id: string;
-  patientName: string;
-  time: string;
-  status: "Online" | "Offline";
-}
-
-interface DashboardStats {
-  totalPasien: number;
-  pendapatan: string;
-  appointments: number;
-}
-
-// Default data - replace with API calls
-const defaultStatistikData: StatistikData[] = [
-  { name: "0", value: 95 },
-  { name: "Jan", value: 100 },
-  { name: "Feb", value: 115 },
-  { name: "Mar", value: 95 },
-  { name: "Apr", value: 90 },
-  { name: "May", value: 100 },
-  { name: "Jun", value: 95 },
-  { name: "Jul", value: 120 },
-  { name: "Aug", value: 130 },
-  { name: "Sep", value: 145 },
-  { name: "Oct", value: 130 },
-  { name: "Nov", value: 90 },
-  { name: "Dec", value: 85 },
-];
-
-const defaultAppointments: Appointment[] = [
-  { id: "1", patientName: "Erna Handayani", time: "10.00 - 11.00", status: "Online" },
-  { id: "2", patientName: "Erna Handayani", time: "10.00 - 11.00", status: "Online" },
-  { id: "3", patientName: "Erna Handayani", time: "10.00 - 11.00", status: "Online" },
-  { id: "4", patientName: "Erna Handayani", time: "10.00 - 11.00", status: "Online" },
-];
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -108,10 +82,12 @@ function StatistikChart({
   data,
   selectedPeriod,
   onPeriodChange,
+  isLoading = false,
 }: {
   data: StatistikData[];
   selectedPeriod: string;
   onPeriodChange: (period: string) => void;
+  isLoading?: boolean;
 }) {
   const [isDropdownOpen, setIsDropdownOpen] = useState(false);
   const periods = ["Tahun ini", "Bulan ini", "Minggu ini"];
@@ -161,6 +137,11 @@ function StatistikChart({
       </div>
 
       <div className="h-[280px] lg:h-[320px]">
+        {isLoading ? (
+          <div className="flex h-full items-center justify-center">
+            <Loader2 className="h-8 w-8 animate-spin text-[#1D7CF3]" />
+          </div>
+        ) : (
         <ResponsiveContainer width="100%" height="100%">
           <AreaChart data={data}>
             <defs>
@@ -181,8 +162,7 @@ function StatistikChart({
               axisLine={false}
               tickLine={false}
               tick={{ fill: "#94A3B8", fontSize: 12 }}
-              domain={[80, 160]}
-              ticks={[100, 150]}
+              domain={[0, 'auto']}
             />
             <Tooltip
               contentStyle={{
@@ -202,61 +182,148 @@ function StatistikChart({
             />
           </AreaChart>
         </ResponsiveContainer>
+        )}
       </div>
     </motion.div>
   );
 }
 
 // Appointment Card Component
-function AppointmentCard({ appointment, isNearest = false }: { appointment: Appointment; isNearest?: boolean }) {
+function AppointmentCard({ 
+  appointment, 
+  isNearest = false 
+}: { 
+  appointment: AppointmentDetail; 
+  isNearest?: boolean;
+}) {
+  const timeDisplay = appointment.start_time && appointment.end_time 
+    ? formatTimeRange(appointment.start_time, appointment.end_time)
+    : '-';
+
   return (
     <div className={`flex items-center justify-between rounded-xl p-4 ${
       isNearest ? "bg-[#FEF3E8]" : "bg-white border border-gray-100"
     }`}>
       <div>
-        <p className="font-medium text-gray-800">{appointment.patientName}</p>
-        <p className="text-sm text-gray-500">{appointment.time}</p>
+        <p className="font-medium text-gray-800">
+          {appointment.patient?.full_name || 'Pasien'}
+        </p>
+        <p className="text-sm text-gray-500">{timeDisplay}</p>
       </div>
       <span className="text-sm font-medium text-[#F97316]">
-        {appointment.status}
+        {appointment.consultation_type === 'ONLINE' ? 'Online' : 'Offline'}
       </span>
     </div>
   );
 }
 
-export default function DokterDashboardPage() {
-  const [statistikData] = useState<StatistikData[]>(defaultStatistikData);
-  const [appointments] = useState<Appointment[]>(defaultAppointments);
-  const [stats] = useState<DashboardStats>({
-    totalPasien: 209,
-    pendapatan: "Rp12.050.000",
-    appointments: 4,
-  });
-  const [selectedPeriod, setSelectedPeriod] = useState("Tahun ini");
+// Loading Skeleton
+function LoadingSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-6 xl:grid-cols-3">
+      <div className="space-y-6 xl:col-span-2">
+        <div className="h-32 animate-pulse rounded-2xl bg-gray-200" />
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-24 animate-pulse rounded-xl bg-gray-200" />
+          ))}
+        </div>
+        <div className="h-96 animate-pulse rounded-2xl bg-gray-200" />
+      </div>
+      <div className="h-96 animate-pulse rounded-2xl bg-gray-200" />
+    </div>
+  );
+}
 
-  // Fetch data from backend (example implementation)
-  // useEffect(() => {
-  //   const fetchDashboardData = async () => {
-  //     try {
-  //       const [statsRes, chartRes, appointmentsRes] = await Promise.all([
-  //         fetch('/api/dokter/stats'),
-  //         fetch('/api/dokter/statistik?period=' + selectedPeriod),
-  //         fetch('/api/dokter/appointments/today'),
-  //       ]);
-  //
-  //       const statsData = await statsRes.json();
-  //       const chartData = await chartRes.json();
-  //       const appointmentsData = await appointmentsRes.json();
-  //
-  //       setStats(statsData);
-  //       setStatistikData(chartData);
-  //       setAppointments(appointmentsData);
-  //     } catch (error) {
-  //       console.error("Failed to fetch dashboard data:", error);
-  //     }
-  //   };
-  //   fetchDashboardData();
-  // }, [selectedPeriod]);
+export default function DokterDashboardPage() {
+  const [dashboard, setDashboard] = useState<DoctorDashboard | null>(null);
+  const [doctorProfile, setDoctorProfile] = useState<Doctor | null>(null);
+  const [incomeData, setIncomeData] = useState<DoctorIncome | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isChartLoading, setIsChartLoading] = useState(false);
+  const [selectedPeriod, setSelectedPeriod] = useState("Tahun ini");
+  const [error, setError] = useState<string | null>(null);
+
+  // Map period to API parameter
+  const getPeriodParam = (period: string): 'today' | 'week' | 'month' | 'year' | 'all' => {
+    switch (period) {
+      case "Minggu ini": return 'week';
+      case "Bulan ini": return 'month';
+      case "Tahun ini": return 'year';
+      default: return 'year';
+    }
+  };
+
+  // Fetch dashboard data
+  const fetchDashboard = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      const [dashboardData, profileData] = await Promise.all([
+        getMyDashboard(),
+        getMyDoctorProfile(),
+      ]);
+      
+      setDashboard(dashboardData);
+      setDoctorProfile(profileData);
+      setIncomeData(dashboardData.income);
+    } catch (err) {
+      console.error('Error fetching dashboard:', err);
+      setError(err instanceof Error ? err.message : 'Gagal memuat data dashboard');
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // Fetch income data based on period
+  const fetchIncomeData = useCallback(async (period: string) => {
+    try {
+      setIsChartLoading(true);
+      const data = await getMyIncome(getPeriodParam(period));
+      setIncomeData(data);
+    } catch (err) {
+      console.error('Error fetching income:', err);
+    } finally {
+      setIsChartLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchDashboard();
+  }, [fetchDashboard]);
+
+  // Handle period change
+  const handlePeriodChange = (period: string) => {
+    setSelectedPeriod(period);
+    fetchIncomeData(period);
+  };
+
+  // Transform monthly income data for chart
+  const chartData: StatistikData[] = incomeData?.monthly_income?.map((item) => ({
+    name: item.month,
+    value: item.income,
+  })) || [];
+
+  if (isLoading) {
+    return <LoadingSkeleton />;
+  }
+
+  if (error) {
+    return (
+      <div className="flex min-h-[400px] flex-col items-center justify-center rounded-2xl bg-white p-8">
+        <p className="mb-4 text-red-500">{error}</p>
+        <button
+          onClick={fetchDashboard}
+          className="rounded-lg bg-[#1D7CF3] px-6 py-2 text-white hover:bg-[#1565D8]"
+        >
+          Coba Lagi
+        </button>
+      </div>
+    );
+  }
+
+  const doctorName = doctorProfile?.user?.full_name || 'Dokter';
 
   return (
     <motion.div
@@ -285,7 +352,7 @@ export default function DokterDashboardPage() {
           <div className="relative z-10 flex flex-col items-center gap-4 p-6 sm:flex-row sm:justify-between lg:p-8">
             <div>
               <h1 className="text-xl font-bold text-gray-800 lg:text-2xl">
-                Halo, dr. Hanifa
+                Halo, {doctorName}
               </h1>
               <p className="mt-1 text-gray-500">Have a nice day!</p>
             </div>
@@ -300,7 +367,7 @@ export default function DokterDashboardPage() {
               />
               <div className="absolute inset-2 overflow-hidden rounded-full">
                 <Image
-                  src="/images/assets/hello-avatar.svg"
+                  src={doctorProfile?.user?.profile_picture_url || "/images/assets/hello-avatar.svg"}
                   alt="Doctor Avatar"
                   fill
                   className="object-contain"
@@ -315,16 +382,26 @@ export default function DokterDashboardPage() {
           variants={itemVariants}
           className="grid grid-cols-1 gap-4 sm:grid-cols-3"
         >
-          <StatsCard value={stats.totalPasien} label="Total Pasien" />
-          <StatsCard value={stats.pendapatan} label="Pendapatan" />
-          <StatsCard value={stats.appointments} label="Appointments" />
+          <StatsCard 
+            value={dashboard?.summary?.total_patients || 0} 
+            label="Total Pasien" 
+          />
+          <StatsCard 
+            value={formatCurrency(dashboard?.summary?.total_income_this_month || 0)} 
+            label="Pendapatan Bulan Ini" 
+          />
+          <StatsCard 
+            value={dashboard?.summary?.upcoming_appointments || 0} 
+            label="Appointments" 
+          />
         </motion.div>
 
         {/* Statistik Chart */}
         <StatistikChart
-          data={statistikData}
+          data={chartData}
           selectedPeriod={selectedPeriod}
-          onPeriodChange={setSelectedPeriod}
+          onPeriodChange={handlePeriodChange}
+          isLoading={isChartLoading}
         />
       </div>
 
@@ -335,18 +412,24 @@ export default function DokterDashboardPage() {
             Pertemuan Hari Ini
           </h3>
           <span className="flex h-7 w-7 items-center justify-center rounded-lg bg-gray-100 text-sm font-medium text-gray-600">
-            {appointments.length}
+            {dashboard?.summary?.today_appointments || 0}
           </span>
         </div>
 
         <div className="space-y-3">
-          {appointments.map((appointment, index) => (
-            <AppointmentCard 
-              key={appointment.id} 
-              appointment={appointment} 
-              isNearest={index === 0}
-            />
-          ))}
+          {dashboard?.upcoming && dashboard.upcoming.length > 0 ? (
+            dashboard.upcoming.map((appointment, index) => (
+              <AppointmentCard 
+                key={appointment.id} 
+                appointment={appointment} 
+                isNearest={index === 0}
+              />
+            ))
+          ) : (
+            <p className="py-8 text-center text-gray-500">
+              Tidak ada pertemuan hari ini
+            </p>
+          )}
         </div>
 
         <Link
