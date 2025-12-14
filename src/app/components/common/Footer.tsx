@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { motion, Variants } from "framer-motion";
 
 const containerVariants: Variants = {
@@ -116,22 +117,13 @@ export default function Footer() {
           <motion.div variants={itemVariants}>
             {/* Logo */}
             <div className="mb-5">
-              <svg
-                width="44"
-                height="44"
-                viewBox="0 0 48 48"
-                fill="none"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path
-                  d="M8 14L20 6L32 14V30L20 38L8 30V14Z"
-                  fill="#64748B"
-                />
-                <path
-                  d="M16 18L28 10L40 18V34L28 42L16 34V18Z"
-                  fill="#475569"
-                />
-              </svg>
+              <Image
+                src="/images/assets/logo.svg"
+                alt="Glucoin Logo"
+                width={120}
+                height={40}
+                className="h-10 w-auto"
+              />
             </div>
 
             {/* Contact */}

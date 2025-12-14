@@ -389,8 +389,15 @@ export default function CheckoutPage() {
       <div className="bg-[#1E293B]">
         <div className="container mx-auto px-4 py-4 lg:px-8">
           <div className="flex items-center justify-between">
-            <Link href="/" className="text-xl font-bold text-white lg:text-2xl">
-              LOGO
+            <Link href="/">
+              <Image
+                src="/images/assets/logo.svg"
+                alt="Glucoin Logo"
+                width={120}
+                height={40}
+                className="h-8 w-auto lg:h-10"
+                priority
+              />
             </Link>
             <div className="hidden items-center gap-8 lg:flex">
               {navLinks.map((link, index) => (
