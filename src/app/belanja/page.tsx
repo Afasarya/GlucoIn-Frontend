@@ -3,27 +3,12 @@
 import Image from "next/image";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Search, MapPin, ShoppingCart, Star, ChevronDown } from "lucide-react";
-import { useState } from "react";
-
-// Types
-interface Product {
-  id: string;
-  name: string;
-  image: string;
-  price: number;
-  originalPrice: number;
-  soldCount: number;
-  rating: number;
-}
-
-interface Voucher {
-  id: string;
-  title: string;
-  discount: string;
-  maxDiscount: string;
-  description: string;
-}
+import { Search, MapPin, ShoppingCart, Star, ChevronDown, Loader2 } from "lucide-react";
+import { useState, useEffect, useCallback } from "react";
+import { getProducts, getCart } from "@/lib/api/marketplace";
+import type { Product, Cart } from "@/lib/types/marketplace";
+import { storage } from "@/lib/hooks/useAuth";
+import type { User } from "@/lib/types/auth";
 
 // Navigation links for marketplace navbar
 const navLinks = [
@@ -34,40 +19,38 @@ const navLinks = [
   { href: "/belanja", label: "Belanja" },
 ];
 
-// Default data
+interface Voucher {
+  id: string;
+  title: string;
+  discount: string;
+  maxDiscount: string;
+  description: string;
+}
+
+// Default vouchers (could be fetched from API in the future)
 const defaultVouchers: Voucher[] = [
   {
     id: "1",
-    title: "Klik \"Gunakan\" untuk langsung dapat diskon",
+    title: 'Klik "Gunakan" untuk langsung dapat diskon',
     discount: "Diskon Akhir Tahun 20% s.d.",
     maxDiscount: "20rb",
     description: "Promo terbaik",
   },
   {
     id: "2",
-    title: "Klik \"Gunakan\" untuk langsung dapat diskon",
+    title: 'Klik "Gunakan" untuk langsung dapat diskon',
     discount: "Diskon Akhir Tahun 20% s.d.",
     maxDiscount: "20rb",
     description: "Promo terbaik",
   },
   {
     id: "3",
-    title: "Klik \"Gunakan\" untuk langsung dapat diskon",
+    title: 'Klik "Gunakan" untuk langsung dapat diskon',
     discount: "Diskon Akhir Tahun 20% s.d.",
     maxDiscount: "20rb",
     description: "Promo terbaik",
   },
 ];
-
-const defaultProducts: Product[] = Array.from({ length: 10 }, (_, i) => ({
-  id: String(i + 1),
-  name: "Glimepiride 300 Tablet",
-  image: "/images/assets/obat.svg",
-  price: 45000,
-  originalPrice: 45000,
-  soldCount: 230,
-  rating: 4.5,
-}));
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -136,12 +119,29 @@ function ProductCard({ product }: { product: Product }) {
       >
         {/* Product Image */}
         <div className="relative aspect-square overflow-hidden bg-gray-50 p-4">
-          <Image
-            src={product.image}
-            alt={product.name}
-            fill
-            className="object-contain transition-transform group-hover:scale-105"
-          />
+          {product.image_url ? (
+            <Image
+              src={product.image_url}
+              alt={product.name}
+              fill
+              className="object-contain transition-transform group-hover:scale-105"
+              unoptimized
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center">
+              <Image
+                src="/images/assets/obat.svg"
+                alt={product.name}
+                fill
+                className="object-contain transition-transform group-hover:scale-105"
+              />
+            </div>
+          )}
+          {product.discount_percent > 0 && (
+            <span className="absolute left-2 top-2 rounded-full bg-red-500 px-2 py-0.5 text-xs font-medium text-white">
+              -{product.discount_percent}%
+            </span>
+          )}
         </div>
 
         {/* Product Info */}
@@ -153,21 +153,30 @@ function ProductCard({ product }: { product: Product }) {
           {/* Price */}
           <div className="mt-2 flex items-center gap-2">
             <span className="text-sm font-bold text-[#F97316]">
-              {formatPrice(product.price)}
+              {formatPrice(product.final_price)}
             </span>
-            <span className="text-xs text-gray-400 line-through">
-              {formatPrice(product.originalPrice)}
-            </span>
+            {product.discount_percent > 0 && (
+              <span className="text-xs text-gray-400 line-through">
+                {formatPrice(product.price)}
+              </span>
+            )}
           </div>
 
           {/* Sold & Rating */}
           <div className="mt-2 flex items-center justify-between text-xs text-gray-500">
-            <span>{product.soldCount} Terjual</span>
+            <span>{product.rating_count} Terjual</span>
             <div className="flex items-center gap-1">
               <Star className="h-3.5 w-3.5 fill-yellow-400 text-yellow-400" />
-              <span>{product.rating}</span>
+              <span>{product.rating.toFixed(1)}</span>
             </div>
           </div>
+
+          {/* Stock Status */}
+          {!product.in_stock && (
+            <span className="mt-2 inline-block rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-500">
+              Stok Habis
+            </span>
+          )}
         </div>
       </motion.div>
     </Link>
@@ -175,9 +184,83 @@ function ProductCard({ product }: { product: Product }) {
 }
 
 export default function BelanjaPage() {
+  // Auth state - use state to avoid hydration issues
+  const [user, setUser] = useState<User | null>(null);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  
   const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [vouchers] = useState<Voucher[]>(defaultVouchers);
-  const [products] = useState<Product[]>(defaultProducts);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [cart, setCart] = useState<Cart | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+
+  // Check auth on mount
+  useEffect(() => {
+    const token = storage.getToken();
+    const storedUser = storage.getUser();
+    setIsAuthenticated(!!token && !!storedUser);
+    setUser(storedUser);
+  }, []);
+
+  // Debounce search
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearch(searchQuery);
+      setPage(1);
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  // Fetch products
+  const fetchProducts = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const response = await getProducts({
+        search: debouncedSearch || undefined,
+        page,
+        limit: 20,
+      });
+      setProducts(response.data);
+      setTotalPages(response.pagination.total_pages);
+    } catch (error) {
+      console.error("Error fetching products:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [debouncedSearch, page]);
+
+  // Fetch cart if authenticated
+  const fetchCart = useCallback(async () => {
+    if (!isAuthenticated) return;
+    try {
+      const response = await getCart();
+      setCart(response.data);
+    } catch (error) {
+      console.error("Error fetching cart:", error);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    fetchProducts();
+  }, [fetchProducts]);
+
+  useEffect(() => {
+    fetchCart();
+  }, [fetchCart]);
+
+  // Get user initials
+  const getUserInitials = () => {
+    if (!user?.full_name) return "?";
+    return user.full_name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .slice(0, 2)
+      .toUpperCase();
+  };
 
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
@@ -193,11 +276,11 @@ export default function BelanjaPage() {
 
             {/* Desktop Navigation */}
             <div className="hidden items-center gap-8 lg:flex">
-              {navLinks.map((link) => {
+              {navLinks.map((link, index) => {
                 const isActive = link.href === "/belanja";
                 return (
                   <Link
-                    key={link.label}
+                    key={`${link.label}-${index}`}
                     href={link.href}
                     className={`text-sm font-medium transition-colors hover:text-[#1D7CF3] ${
                       isActive ? "text-[#1D7CF3]" : "text-gray-300"
@@ -211,13 +294,24 @@ export default function BelanjaPage() {
 
             {/* User Profile */}
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1D7CF3] text-sm font-semibold text-white">
-                HA
-              </div>
-              <span className="hidden text-sm font-medium text-white md:block">
-                Hanifa Akhilah
-              </span>
-              <ChevronDown className="hidden h-4 w-4 text-gray-400 md:block" />
+              {isAuthenticated ? (
+                <>
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-[#1D7CF3] text-sm font-semibold text-white">
+                    {getUserInitials()}
+                  </div>
+                  <span className="hidden text-sm font-medium text-white md:block">
+                    {user?.full_name || "User"}
+                  </span>
+                  <ChevronDown className="hidden h-4 w-4 text-gray-400 md:block" />
+                </>
+              ) : (
+                <Link
+                  href="/login"
+                  className="rounded-lg bg-[#1D7CF3] px-4 py-2 text-sm font-medium text-white hover:bg-[#1565D8]"
+                >
+                  Masuk
+                </Link>
+              )}
             </div>
           </div>
         </div>
@@ -247,9 +341,14 @@ export default function BelanjaPage() {
                 </div>
               </div>
 
-              <button className="relative text-white">
+              <Link href="/belanja/checkout" className="relative text-white">
                 <ShoppingCart className="h-6 w-6" />
-              </button>
+                {cart && cart.total_items > 0 && (
+                  <span className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-xs font-medium text-white">
+                    {cart.total_items}
+                  </span>
+                )}
+              </Link>
             </div>
           </div>
         </div>
@@ -267,7 +366,7 @@ export default function BelanjaPage() {
           />
           {/* Overlay gradient */}
           <div className="absolute inset-0 bg-gradient-to-r from-black/30 to-transparent" />
-          
+
           {/* Banner Content */}
           <div className="absolute left-6 top-1/2 -translate-y-1/2 text-white md:left-10 lg:left-16">
             <p className="text-sm font-medium opacity-90">12-28 Des</p>
@@ -299,17 +398,59 @@ export default function BelanjaPage() {
 
       {/* Products Section */}
       <div className="container mx-auto px-4 py-8 lg:px-8">
-        {/* Products Grid */}
-        <motion.div
-          variants={containerVariants}
-          initial="hidden"
-          animate="visible"
-          className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
-        >
-          {products.map((product) => (
-            <ProductCard key={product.id} product={product} />
-          ))}
-        </motion.div>
+        {/* Loading State */}
+        {isLoading ? (
+          <div className="flex items-center justify-center py-20">
+            <Loader2 className="h-8 w-8 animate-spin text-[#1D7CF3]" />
+          </div>
+        ) : products.length === 0 ? (
+          <div className="flex flex-col items-center justify-center py-20 text-gray-500">
+            <ShoppingCart className="h-16 w-16 mb-4 opacity-50" />
+            <p className="text-lg font-medium">Tidak ada produk ditemukan</p>
+            {debouncedSearch && (
+              <p className="text-sm">
+                Coba cari dengan kata kunci lain
+              </p>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* Products Grid */}
+            <motion.div
+              variants={containerVariants}
+              initial="hidden"
+              animate="visible"
+              className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5"
+            >
+              {products.map((product) => (
+                <ProductCard key={product.id} product={product} />
+              ))}
+            </motion.div>
+
+            {/* Pagination */}
+            {totalPages > 1 && (
+              <div className="mt-8 flex items-center justify-center gap-2">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Sebelumnya
+                </button>
+                <span className="px-4 py-2 text-sm text-gray-600">
+                  Halaman {page} dari {totalPages}
+                </span>
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  Selanjutnya
+                </button>
+              </div>
+            )}
+          </>
+        )}
       </div>
     </div>
   );
